@@ -24,23 +24,23 @@ public class RobotService {
     private final SafetyRecordRepository safetyRecordRepository;
 
     @Transactional(readOnly = true)
-    public RobotStatusResponse getStatus(Long robotId) {
-        // TODO(F-01): sessionRegistry.isConnected(robotId) + 최근 텔레메트리/안전도 기록으로 응답 구성
+    public RobotStatusResponse getStatus() {
+        // TODO(F-04): sessionRegistry.isConnected() + 최근 센서 값/위험도 기록으로 응답 구성
         throw new BusinessException(ErrorCode.NOT_IMPLEMENTED);
     }
 
-    public RobotCommandResponse sendCommand(Long robotId, RobotCommandRequest request) {
-        // TODO(F-08): commandId 채번 → RobotCommandMessage 생성 → commandSender.send(robotId, message)
+    public RobotCommandResponse sendCommand(RobotCommandRequest request) {
+        // TODO(F-11): commandId 채번 → RobotCommandMessage 생성 → commandSender.send(message)
         throw new BusinessException(ErrorCode.NOT_IMPLEMENTED);
     }
 
-    public void emergencyStop(Long robotId) {
-        // TODO(F-09): STOP 명령 전송. 로보독이 끊겨 있어도 호출한 쪽(안전도 판단)이 실패하지 않게 처리
+    public void emergencyStop() {
+        // TODO(F-12): STOP 명령 전송. 로보독이 끊겨 있어도 호출한 쪽(위험도 판단)이 실패하지 않게 처리
         throw new BusinessException(ErrorCode.NOT_IMPLEMENTED);
     }
 
-    public void handleAck(Long robotId, String payload) {
-        // TODO(F-08): payload(JSON)를 RobotAckMessage로 파싱해 명령 결과 처리
-        log.info("로보독 {} 수신: {}", robotId, payload);
+    public void handleAck(String payload) {
+        // TODO(F-11): payload(JSON)를 RobotAckMessage로 파싱해 명령 결과 처리
+        log.info("로보독 수신: {}", payload);
     }
 }

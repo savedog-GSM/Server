@@ -5,5 +5,7 @@ public enum CommandType {
     BACKWARD,
     TURN_LEFT,
     TURN_RIGHT,
-    STOP
+    STOP,
+    BARK,
+    SIT
 }

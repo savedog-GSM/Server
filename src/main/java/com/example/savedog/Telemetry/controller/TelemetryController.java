@@ -1,8 +1,10 @@
 package com.example.savedog.Telemetry.controller;
 
+import com.example.savedog.Telemetry.DTO.LocationRequest;
 import com.example.savedog.Telemetry.DTO.TelemetryRequest;
 import com.example.savedog.Telemetry.DTO.TelemetryResponse;
 import com.example.savedog.Telemetry.service.CameraFrameService;
+import com.example.savedog.Telemetry.service.LocationService;
 import com.example.savedog.Telemetry.service.TelemetryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -10,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,39 +23,43 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/robots/{robotId}")
+@RequestMapping("/api/robot")
 @RequiredArgsConstructor
 public class TelemetryController {
     private final TelemetryService telemetryService;
+    private final LocationService locationService;
     private final CameraFrameService cameraFrameService;
 
     @PostMapping("/telemetry")
-    public ResponseEntity<TelemetryResponse> receive(
-            @PathVariable Long robotId,
-            @RequestBody TelemetryRequest request
-    ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(telemetryService.receive(robotId, request));
+    public ResponseEntity<TelemetryResponse> receive(@RequestBody TelemetryRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(telemetryService.receive(request));
     }
 
     @GetMapping("/telemetry")
     public List<TelemetryResponse> findTrack(
-            @PathVariable Long robotId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
     ) {
-        return telemetryService.findTrack(robotId, from, to);
+        return telemetryService.findTrack(from, to);
+    }
+
+    @PostMapping("/location")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void receiveLocation(@RequestBody LocationRequest request) {
+        locationService.store(request);
     }
 
     @PostMapping(value = "/frames", consumes = MediaType.IMAGE_JPEG_VALUE)
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void receiveFrame(@PathVariable Long robotId, @RequestBody byte[] jpeg) {
-        cameraFrameService.store(robotId, jpeg);
+    public void receiveFrame(@RequestBody byte[] jpeg) {
+        cameraFrameService.store(jpeg);
     }
 
+    // 이미지는 S3에 있으므로 presigned URL로 넘긴다.
     @GetMapping("/frames/latest")
-    public ResponseEntity<byte[]> getLatestFrame(@PathVariable Long robotId) {
-        return ResponseEntity.ok()
-                .contentType(MediaType.IMAGE_JPEG)
-                .body(cameraFrameService.getLatest(robotId));
+    public ResponseEntity<Void> getLatestFrame() {
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(cameraFrameService.getLatestUrl())
+                .build();
     }
 }

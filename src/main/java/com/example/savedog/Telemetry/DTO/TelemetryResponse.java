@@ -1,27 +1,28 @@
 package com.example.savedog.Telemetry.DTO;
 
+import com.example.savedog.Safety.DTO.RiskResponse;
 import com.example.savedog.Telemetry.domain.Telemetry;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
+// 센서·위험도 스냅샷. 위치·속도는 최근 위치가 없으면 null, risk는 위험도 판단 전이면 null
 public record TelemetryResponse(
         Long id,
-        Long robotId,
-        double latitude,
-        double longitude,
-        double speed,
-        List<SensorReadingDto> sensors,
+        Double latitude,
+        Double longitude,
+        Double speed,
+        SensorValues sensor,
+        RiskResponse risk,
         LocalDateTime recordedAt
 ) {
-    public static TelemetryResponse from(Telemetry telemetry) {
+    public static TelemetryResponse of(Telemetry telemetry, RiskResponse risk) {
         return new TelemetryResponse(
                 telemetry.getId(),
-                telemetry.getRobotId(),
                 telemetry.getLatitude(),
                 telemetry.getLongitude(),
                 telemetry.getSpeed(),
-                telemetry.getSensorReadings().stream().map(SensorReadingDto::from).toList(),
+                new SensorValues(telemetry.getDistance(), telemetry.getRoll(), telemetry.getPitch()),
+                risk,
                 telemetry.getRecordedAt()
         );
     }

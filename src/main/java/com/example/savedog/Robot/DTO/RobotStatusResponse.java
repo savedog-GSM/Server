@@ -7,7 +7,6 @@ import java.time.LocalDateTime;
 
 // 텔레메트리/안전도 기록이 아직 없으면 last* 값은 null
 public record RobotStatusResponse(
-        Long robotId,
         boolean connected,
         LocalDateTime lastTelemetryAt,
         GeoPoint lastLocation,

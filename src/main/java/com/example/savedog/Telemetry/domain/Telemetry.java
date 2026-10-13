@@ -1,55 +1,56 @@
 package com.example.savedog.Telemetry.domain;
 
-import jakarta.persistence.CollectionTable;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Telemetry {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long robotId;
+    // 위치·속도는 스마트폰이 보낸 값이라 최근 위치가 없으면 null
+    private Double latitude;
 
-    private double latitude;
+    private Double longitude;
 
-    private double longitude;
+    private Double locationAccuracy;
 
-    private double speed;
+    private Double speed;
 
-    @ElementCollection
-    @CollectionTable(name = "telemetry_sensor_reading", joinColumns = @JoinColumn(name = "telemetry_id"))
-    private List<SensorReading> sensorReadings = new ArrayList<>();
+    private double distance;
+
+    private double roll;
+
+    private double pitch;
 
     private LocalDateTime recordedAt;
 
     public Telemetry(
-            Long robotId,
-            double latitude,
-            double longitude,
-            double speed,
-            List<SensorReading> sensorReadings
+            RobotLocation location,
+            double distance,
+            double roll,
+            double pitch
     ) {
-        this.robotId = robotId;
-        this.latitude = latitude;
-        this.longitude = longitude;
-        this.speed = speed;
-        this.sensorReadings.addAll(sensorReadings);
+        if (location != null) {
+            this.latitude = location.latitude();
+            this.longitude = location.longitude();
+            this.locationAccuracy = location.accuracy();
+            this.speed = location.speed();
+        }
+        this.distance = distance;
+        this.roll = roll;
+        this.pitch = pitch;
         this.recordedAt = LocalDateTime.now();
     }
-
 }

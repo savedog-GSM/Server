@@ -28,7 +28,7 @@ public class SafetyController {
     }
 
     @GetMapping("/segments")
-    public List<SafetySegmentResponse> findSegments(@RequestParam Long robotId) {
-        return safetyService.findSegments(robotId);
+    public List<SafetySegmentResponse> findSegments() {
+        return safetyService.findSegments();
     }
 }

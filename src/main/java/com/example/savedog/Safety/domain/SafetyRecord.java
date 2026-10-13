@@ -20,8 +20,6 @@ public class SafetyRecord {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long robotId;
-
     private Long telemetryId;
 
     private double latitude;
@@ -29,30 +27,28 @@ public class SafetyRecord {
     private double longitude;
 
     @Enumerated(EnumType.STRING)
-    private SafetyLevel level;
+    private SafetyLevel riskLevel;
 
-    // 0~100, 높을수록 안전
-    private int score;
+    // 1~5, 높을수록 위험
+    private int riskScore;
 
     private String reason;
 
     private LocalDateTime assessedAt;
 
     public SafetyRecord(
-            Long robotId,
             Long telemetryId,
             double latitude,
             double longitude,
-            SafetyLevel level,
-            int score,
+            SafetyLevel riskLevel,
+            int riskScore,
             String reason
     ) {
-        this.robotId = robotId;
         this.telemetryId = telemetryId;
         this.latitude = latitude;
         this.longitude = longitude;
-        this.level = level;
-        this.score = score;
+        this.riskLevel = riskLevel;
+        this.riskScore = riskScore;
         this.reason = reason;
         this.assessedAt = LocalDateTime.now();
     }

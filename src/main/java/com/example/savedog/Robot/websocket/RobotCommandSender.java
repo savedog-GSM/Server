@@ -19,13 +19,13 @@ public class RobotCommandSender {
     private final RobotSessionRegistry sessionRegistry;
     private final JsonMapper jsonMapper;
 
-    public void send(Long robotId, RobotCommandMessage message) {
-        WebSocketSession session = sessionRegistry.find(robotId)
+    public void send(RobotCommandMessage message) {
+        WebSocketSession session = sessionRegistry.find()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROBOT_NOT_CONNECTED));
         try {
             session.sendMessage(new TextMessage(jsonMapper.writeValueAsString(message)));
         } catch (IOException e) {
-            log.warn("로보독 {} 명령 전송 실패", robotId, e);
+            log.warn("로보독 명령 전송 실패", e);
             throw new BusinessException(ErrorCode.ROBOT_NOT_CONNECTED);
         }
     }
