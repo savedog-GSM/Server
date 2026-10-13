@@ -5,8 +5,12 @@ import com.example.savedog.Safety.DTO.RiskResponse;
 import com.example.savedog.Safety.DTO.SafetyRecordResponse;
 import com.example.savedog.Safety.DTO.SafetySegmentResponse;
 import com.example.savedog.Safety.analyzer.SafetyAnalyzer;
+import com.example.savedog.Safety.analyzer.SafetyAssessment;
+import com.example.savedog.Safety.analyzer.SafetyContext;
+import com.example.savedog.Safety.domain.SafetyRecord;
 import com.example.savedog.Safety.repository.SafetyRecordRepository;
 import com.example.savedog.Telemetry.domain.Telemetry;
+import com.example.savedog.global.common.GeoPoint;
 import com.example.savedog.global.exception.BusinessException;
 import com.example.savedog.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -24,11 +28,30 @@ public class SafetyService {
 
     @Transactional
     public RiskResponse assess(Telemetry telemetry) {
-        // TODO(F-06): 1) telemetry로 SafetyContext 구성 → safetyAnalyzer.analyze(context)
-        //             2) 위치가 있는 기록일 때만 SafetyRecord 저장 (위치 없는 결과는 지도 데이터에 넣지 않음)
-        //             3) 판정 결과를 RiskResponse로 반환
+        GeoPoint location = locationOf(telemetry);
+        SafetyAssessment assessment = safetyAnalyzer.analyze(
+                new SafetyContext(location, telemetry.getDistance(), telemetry.getRoll(), telemetry.getPitch())
+        );
+        // 위치 없는 결과는 지도에 찍을 수 없으므로 기록으로 남기지 않는다.
+        if (location != null) {
+            safetyRecordRepository.save(new SafetyRecord(
+                    telemetry.getId(),
+                    location.latitude(),
+                    location.longitude(),
+                    assessment.level(),
+                    assessment.score(),
+                    assessment.reason()
+            ));
+        }
         // TODO(F-12): 등급이 DANGER로 바뀌는 순간 한 번 robotService.emergencyStop()
-        throw new BusinessException(ErrorCode.NOT_IMPLEMENTED);
+        return new RiskResponse(assessment.level(), assessment.score(), assessment.reason());
+    }
+
+    private GeoPoint locationOf(Telemetry telemetry) {
+        if (telemetry.getLatitude() == null || telemetry.getLongitude() == null) {
+            return null;
+        }
+        return new GeoPoint(telemetry.getLatitude(), telemetry.getLongitude());
     }
 
     @Transactional(readOnly = true)

@@ -5,7 +5,7 @@ import com.example.savedog.Telemetry.domain.Telemetry;
 
 import java.time.LocalDateTime;
 
-// 센서·위험도 스냅샷. 위치·속도는 최근 위치가 없으면 null, risk는 위험도 판단 전이면 null
+// 센서·위험도 스냅샷. 위치·속도는 최근 위치가 없으면 null
 public record TelemetryResponse(
         Long id,
         Double latitude,

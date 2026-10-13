@@ -1,5 +1,6 @@
 package com.example.savedog.Telemetry.service;
 
+import com.example.savedog.Safety.DTO.RiskResponse;
 import com.example.savedog.Safety.service.SafetyService;
 import com.example.savedog.Telemetry.DTO.SensorValues;
 import com.example.savedog.Telemetry.DTO.TelemetryRequest;
@@ -37,8 +38,8 @@ public class TelemetryService {
         Telemetry telemetry = telemetryRepository.save(
                 new Telemetry(location, sensor.distance(), sensor.roll(), sensor.pitch())
         );
-        // TODO(F-06): safetyService.assess(telemetry) 결과를 null 대신 넘기기
-        TelemetryResponse response = TelemetryResponse.of(telemetry, null);
+        RiskResponse risk = safetyService.assess(telemetry);
+        TelemetryResponse response = TelemetryResponse.of(telemetry, risk);
         webSocketService.broadcastTelemetry(response);
         return response;
     }
