@@ -1,6 +1,9 @@
 package com.example.savedog.Telemetry.domain;
 
+import com.example.savedog.Safety.domain.SafetyLevel;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -28,19 +31,28 @@ public class Telemetry {
 
     private Double speed;
 
-    private double distance;
+    // 거리는 아두이노가, 기울기는 로보독이 따로 보낸다. 한쪽 장치가 조용하면 그쪽 값은 null
+    private Double distance;
 
-    private double roll;
+    private Double roll;
 
-    private double pitch;
+    private Double pitch;
+
+    // 위험도 판단 결과. 위치가 없는 기록도 대시보드와 이동 기록에서 위험도를 볼 수 있게 여기에도 남긴다.
+    @Enumerated(EnumType.STRING)
+    private SafetyLevel riskLevel;
+
+    private Integer riskScore;
+
+    private String riskReason;
 
     private LocalDateTime recordedAt;
 
     public Telemetry(
             RobotLocation location,
-            double distance,
-            double roll,
-            double pitch
+            Double distance,
+            Double roll,
+            Double pitch
     ) {
         if (location != null) {
             this.latitude = location.latitude();
@@ -52,5 +64,15 @@ public class Telemetry {
         this.roll = roll;
         this.pitch = pitch;
         this.recordedAt = LocalDateTime.now();
+    }
+
+    public void applyRisk(SafetyLevel level, int score, String reason) {
+        this.riskLevel = level;
+        this.riskScore = score;
+        this.riskReason = reason;
+    }
+
+    public boolean hasLocation() {
+        return latitude != null && longitude != null;
     }
 }

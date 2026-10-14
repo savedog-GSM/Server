@@ -6,6 +6,8 @@ import com.example.savedog.Telemetry.DTO.TelemetryResponse;
 import com.example.savedog.Telemetry.service.CameraFrameService;
 import com.example.savedog.Telemetry.service.LocationService;
 import com.example.savedog.Telemetry.service.TelemetryService;
+import com.example.savedog.global.security.DeviceEndpoint;
+import com.example.savedog.global.storage.ImageUrlResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -30,6 +32,7 @@ public class TelemetryController {
     private final LocationService locationService;
     private final CameraFrameService cameraFrameService;
 
+    @DeviceEndpoint
     @PostMapping("/telemetry")
     public ResponseEntity<TelemetryResponse> receive(@RequestBody TelemetryRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(telemetryService.receive(request));
@@ -43,15 +46,17 @@ public class TelemetryController {
         return telemetryService.findTrack(from, to);
     }
 
+    @DeviceEndpoint
     @PostMapping("/location")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void receiveLocation(@RequestBody LocationRequest request) {
         locationService.store(request);
     }
 
+    @DeviceEndpoint
     @PostMapping(value = "/frames", consumes = MediaType.IMAGE_JPEG_VALUE)
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void receiveFrame(@RequestBody byte[] jpeg) {
+    public void receiveFrame(@RequestBody(required = false) byte[] jpeg) {
         cameraFrameService.store(jpeg);
     }
 
@@ -61,5 +66,11 @@ public class TelemetryController {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(cameraFrameService.getLatestUrl())
                 .build();
+    }
+
+    // <img>는 인증 헤더를 붙일 수 없어서, 관제 토큰을 쓰는 화면은 주소만 받아 img.src에 넣는다.
+    @GetMapping("/frames/latest/url")
+    public ImageUrlResponse getLatestFrameUrl() {
+        return ImageUrlResponse.from(cameraFrameService.getLatestUrl());
     }
 }

@@ -1,7 +1,5 @@
 package com.example.savedog.Safety.service;
 
-import com.example.savedog.Robot.service.RobotService;
-import com.example.savedog.Safety.DTO.RiskResponse;
 import com.example.savedog.Safety.DTO.SafetyRecordResponse;
 import com.example.savedog.Safety.DTO.SafetySegmentResponse;
 import com.example.savedog.Safety.analyzer.SafetyAnalyzer;
@@ -11,30 +9,42 @@ import com.example.savedog.Safety.domain.SafetyRecord;
 import com.example.savedog.Safety.repository.SafetyRecordRepository;
 import com.example.savedog.Telemetry.domain.Telemetry;
 import com.example.savedog.global.common.GeoPoint;
-import com.example.savedog.global.exception.BusinessException;
-import com.example.savedog.global.exception.ErrorCode;
+import com.example.savedog.global.validation.RequestValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class SafetyService {
+    // 지도 한 화면에 내려주는 기록의 상한. 넘으면 최근 것부터 이만큼만 준다.
+    private static final int MAX_RECORDS_IN_BOUNDS = 5_000;
+    // 구간으로 묶어 내려주는 기록의 상한. 1초에 한 건씩이면 5시간 반쯤 된다.
+    private static final int MAX_RECORDS_FOR_SEGMENTS = 20_000;
+
     private final SafetyAnalyzer safetyAnalyzer;
     private final SafetyRecordRepository safetyRecordRepository;
-    private final RobotService robotService;
 
+    // 센서 값 저장과 같은 트랜잭션 안에서 불린다.
     @Transactional
-    public RiskResponse assess(Telemetry telemetry) {
-        GeoPoint location = locationOf(telemetry);
+    public Assessed assess(Telemetry telemetry) {
+        GeoPoint location = telemetry.hasLocation()
+                ? new GeoPoint(telemetry.getLatitude(), telemetry.getLongitude())
+                : null;
         SafetyAssessment assessment = safetyAnalyzer.analyze(
                 new SafetyContext(location, telemetry.getDistance(), telemetry.getRoll(), telemetry.getPitch())
         );
-        // 위치 없는 결과는 지도에 찍을 수 없으므로 기록으로 남기지 않는다.
+        telemetry.applyRisk(assessment.level(), assessment.score(), assessment.reason());
+
+        // 위치 없는 결과는 지도에 찍을 수 없으므로 위험도 기록으로는 남기지 않는다.
+        SafetyRecord record = null;
         if (location != null) {
-            safetyRecordRepository.save(new SafetyRecord(
+            record = safetyRecordRepository.save(new SafetyRecord(
                     telemetry.getId(),
                     location.latitude(),
                     location.longitude(),
@@ -43,26 +53,34 @@ public class SafetyService {
                     assessment.reason()
             ));
         }
-        // TODO(F-12): 등급이 DANGER로 바뀌는 순간 한 번 robotService.emergencyStop()
-        return new RiskResponse(assessment.level(), assessment.score(), assessment.reason());
-    }
-
-    private GeoPoint locationOf(Telemetry telemetry) {
-        if (telemetry.getLatitude() == null || telemetry.getLongitude() == null) {
-            return null;
-        }
-        return new GeoPoint(telemetry.getLatitude(), telemetry.getLongitude());
+        return new Assessed(assessment, record);
     }
 
     @Transactional(readOnly = true)
     public List<SafetyRecordResponse> findInBounds(double swLat, double swLng, double neLat, double neLng) {
-        // TODO(F-07): 지도 영역(남서~북동) 안의 위험도 기록 조회
-        throw new BusinessException(ErrorCode.NOT_IMPLEMENTED);
+        GeoPoint southWest = RequestValidator.coordinate(swLat, swLng, "남서 좌표(sw)");
+        GeoPoint northEast = RequestValidator.coordinate(neLat, neLng, "북동 좌표(ne)");
+        if (southWest.latitude() > northEast.latitude() || southWest.longitude() > northEast.longitude()) {
+            throw RequestValidator.invalid("남서 좌표(sw)는 북동 좌표(ne)보다 남쪽·서쪽이어야 합니다.");
+        }
+        return safetyRecordRepository
+                .findByLatitudeBetweenAndLongitudeBetweenOrderByAssessedAtDesc(
+                        southWest.latitude(), northEast.latitude(),
+                        southWest.longitude(), northEast.longitude(),
+                        Limit.of(MAX_RECORDS_IN_BOUNDS)
+                )
+                .stream()
+                .map(SafetyRecordResponse::from)
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public List<SafetySegmentResponse> findSegments() {
-        // TODO(F-07): 시간순 기록을 같은 등급끼리 묶어 구간(선)으로 변환
-        throw new BusinessException(ErrorCode.NOT_IMPLEMENTED);
+        // 최근 것부터 상한까지만 읽은 뒤, 구간을 만들 수 있게 시간순으로 되돌린다.
+        List<SafetyRecord> records = new ArrayList<>(
+                safetyRecordRepository.findAllByOrderByAssessedAtDesc(Limit.of(MAX_RECORDS_FOR_SEGMENTS))
+        );
+        Collections.reverse(records);
+        return SafetySegmentBuilder.build(records);
     }
 }

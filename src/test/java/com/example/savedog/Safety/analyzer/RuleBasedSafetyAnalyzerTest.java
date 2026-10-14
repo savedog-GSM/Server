@@ -1,5 +1,6 @@
 package com.example.savedog.Safety.analyzer;
 
+import com.example.savedog.Safety.domain.HazardType;
 import com.example.savedog.Safety.domain.SafetyLevel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,6 +80,53 @@ class RuleBasedSafetyAnalyzerTest {
         assertEquals("좌우 기울기 32°", analyze(150, -32, 5).reason());
         assertEquals("앞뒤 기울기 32°", analyze(150, 5, 32).reason());
         assertEquals("전방 18cm 장애물, 좌우 기울기 32°", analyze(18, 32, 0).reason());
+    }
+
+    @Test
+    @DisplayName("거리 기준에 걸리면 장애물, 기울기 기준에만 걸리면 위험한 길로 본다")
+    void hazardTypeFollowsWhatRaisedTheScore() {
+        assertEquals(HazardType.OBSTACLE, analyze(18, 0, 0).hazardType());
+        assertEquals(HazardType.ROUGH_ROAD, analyze(150, 32, 0).hazardType());
+        assertEquals(HazardType.OBSTACLE, analyze(18, 32, 0).hazardType());
+        assertNull(analyze(150, 0, 0).hazardType());
+    }
+
+    @Test
+    @DisplayName("기울기 값이 없으면(로보독이 조용하면) 거리만으로 판단한다")
+    void judgesByDistanceAloneWhenTiltIsMissing() {
+        SafetyAssessment danger = analyzer.analyze(new SafetyContext(null, 18.0, null, null));
+        assertEquals(5, danger.score());
+        assertEquals(HazardType.OBSTACLE, danger.hazardType());
+        assertEquals("전방 18cm 장애물", danger.reason());
+
+        SafetyAssessment safe = analyzer.analyze(new SafetyContext(null, 150.0, null, null));
+        assertEquals(1, safe.score());
+        assertNull(safe.reason());
+    }
+
+    @Test
+    @DisplayName("거리 값이 없으면(아두이노가 조용하면) 기울기만으로 판단한다")
+    void judgesByTiltAloneWhenDistanceIsMissing() {
+        SafetyAssessment danger = analyzer.analyze(new SafetyContext(null, null, 3.0, -32.0));
+        assertEquals(5, danger.score());
+        assertEquals(HazardType.ROUGH_ROAD, danger.hazardType());
+        assertEquals("앞뒤 기울기 32°", danger.reason());
+
+        SafetyAssessment safe = analyzer.analyze(new SafetyContext(null, null, 0.0, 0.0));
+        assertEquals(1, safe.score());
+        assertEquals(SafetyLevel.SAFE, safe.level());
+        assertNull(safe.hazardType());
+    }
+
+    @Test
+    @DisplayName("값이 없는 항목은 위험 사유로 꼽히지 않는다")
+    void missingValueIsNeverTheReason() {
+        // 기울기만으로 1점(안전)일 때 "거리 때문"이라고 하면 안 된다.
+        SafetyAssessment assessment = analyzer.analyze(new SafetyContext(null, null, 16.0, 0.0));
+
+        assertEquals(3, assessment.score());
+        assertEquals(HazardType.ROUGH_ROAD, assessment.hazardType());
+        assertEquals("좌우 기울기 16°", assessment.reason());
     }
 
     private SafetyAssessment analyze(double distance, double roll, double pitch) {

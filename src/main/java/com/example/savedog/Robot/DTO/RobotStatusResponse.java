@@ -1,15 +1,19 @@
 package com.example.savedog.Robot.DTO;
 
-import com.example.savedog.Safety.domain.SafetyLevel;
-import com.example.savedog.global.common.GeoPoint;
+import com.example.savedog.Safety.DTO.RiskResponse;
+import com.example.savedog.Telemetry.DTO.SensorValues;
 
 import java.time.LocalDateTime;
 
-// 텔레메트리/안전도 기록이 아직 없으면 last* 값은 null
+// 대시보드 첫 화면용. 센서 값을 한 번도 받지 못했으면 connected 외의 값은 null
 public record RobotStatusResponse(
         boolean connected,
-        LocalDateTime lastTelemetryAt,
-        GeoPoint lastLocation,
-        SafetyLevel lastSafetyLevel
+        LocalDateTime lastSeenAt,
+        LocalDateTime lastLocationAt,
+        Double latitude,
+        Double longitude,
+        Double speed,
+        SensorValues sensor,
+        RiskResponse risk
 ) {
 }

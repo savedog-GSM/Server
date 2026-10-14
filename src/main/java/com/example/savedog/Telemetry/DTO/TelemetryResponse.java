@@ -15,15 +15,23 @@ public record TelemetryResponse(
         RiskResponse risk,
         LocalDateTime recordedAt
 ) {
-    public static TelemetryResponse of(Telemetry telemetry, RiskResponse risk) {
+    public static TelemetryResponse from(Telemetry telemetry) {
         return new TelemetryResponse(
                 telemetry.getId(),
                 telemetry.getLatitude(),
                 telemetry.getLongitude(),
                 telemetry.getSpeed(),
                 new SensorValues(telemetry.getDistance(), telemetry.getRoll(), telemetry.getPitch()),
-                risk,
+                riskOf(telemetry),
                 telemetry.getRecordedAt()
         );
+    }
+
+    // 위험도 판단이 붙기 전에 저장된 옛 기록은 risk가 null
+    private static RiskResponse riskOf(Telemetry telemetry) {
+        if (telemetry.getRiskLevel() == null || telemetry.getRiskScore() == null) {
+            return null;
+        }
+        return new RiskResponse(telemetry.getRiskLevel(), telemetry.getRiskScore(), telemetry.getRiskReason());
     }
 }
