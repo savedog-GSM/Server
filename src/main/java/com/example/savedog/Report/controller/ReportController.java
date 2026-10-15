@@ -4,7 +4,6 @@ import com.example.savedog.Report.DTO.ReportResponse;
 import com.example.savedog.Report.DTO.ReportSubmitRequest;
 import com.example.savedog.Report.domain.ReportStatus;
 import com.example.savedog.Report.service.ReportService;
-import com.example.savedog.global.response.ApiResponse;
 import com.example.savedog.global.storage.ImageUrlResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,15 +36,10 @@ public class ReportController {
 
     // 사진은 S3에 있으므로 presigned URL로 넘긴다.
     @GetMapping("/{reportId}/photo")
-    public ResponseEntity<?> getPhoto(@PathVariable Long reportId) {
-        try{
-            return ResponseEntity.status(HttpStatus.FOUND)
+    public ResponseEntity<Void> getPhoto(@PathVariable Long reportId) {
+        return ResponseEntity.status(HttpStatus.FOUND)
                 .location(reportService.getPhotoUrl(reportId))
                 .build();
-        }catch(IllegalArgumentException e){
-            return ResponseEntity.badRequest().body(new ApiResponse(400, "잘못된 요청입니다."));
-        }
-
     }
 
     // <img>는 인증 헤더를 붙일 수 없어서, 관제 토큰을 쓰는 화면은 주소만 받아 img.src에 넣는다.
