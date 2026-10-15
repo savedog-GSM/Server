@@ -36,8 +36,12 @@ public class TelemetryController {
 
     @DeviceEndpoint
     @PostMapping("/telemetry")
-    public ResponseEntity<TelemetryResponse> receive(@RequestBody TelemetryRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(telemetryService.receive(request));
+    public ResponseEntity<?> receive(@RequestBody TelemetryRequest request) {
+        try{
+            return ResponseEntity.status(HttpStatus.CREATED).body(telemetryService.receive(request));
+        }catch (IllegalArgumentException e){
+            return ResponseEntity.badRequest().body(new ApiResponse(400, "잘못된 요청입니다."));
+        }
     }
 
     @GetMapping("/telemetry")
@@ -74,10 +78,15 @@ public class TelemetryController {
 
     // 이미지는 S3에 있으므로 presigned URL로 넘긴다.
     @GetMapping("/frames/latest")
-    public ResponseEntity<Void> getLatestFrame() {
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(cameraFrameService.getLatestUrl())
-                .build();
+    public ResponseEntity<?> getLatestFrame() {
+        try{
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(cameraFrameService.getLatestUrl())
+                    .build();
+        }catch (IllegalArgumentException e){
+            return ResponseEntity.badRequest().body(new ApiResponse(400, "잘못된 요청입니다."));
+        }
+
     }
 
     // <img>는 인증 헤더를 붙일 수 없어서, 관제 토큰을 쓰는 화면은 주소만 받아 img.src에 넣는다.
