@@ -12,7 +12,7 @@ import java.util.Arrays;
 public class AllowedOrigins {
     private final String[] origins;
 
-    public AllowedOrigins(@Value("${savedog.cors.allowed-origins:}") String configured) {
+    public AllowedOrigins(@Value("${savedog.cors.allowed-origins}") String configured) {
         // "a, b"처럼 쉼표 뒤에 공백을 넣어도 맞게 읽는다.
         this.origins = Arrays.stream(configured.split(","))
                 .map(String::trim)

@@ -10,6 +10,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Optional;
 
+//주소 설정
 @Slf4j
 @Configuration
 public class AddressConfig {
