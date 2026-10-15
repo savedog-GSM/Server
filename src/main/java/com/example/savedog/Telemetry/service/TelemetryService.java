@@ -1,0 +1,147 @@
+package com.example.savedog.Telemetry.service;
+
+import com.example.savedog.Report.service.HazardReportTrigger;
+import com.example.savedog.Robot.service.DangerResponder;
+import com.example.savedog.Safety.service.Assessed;
+import com.example.savedog.Safety.service.SafetyService;
+import com.example.savedog.Telemetry.DTO.SensorValues;
+import com.example.savedog.Telemetry.DTO.TelemetryRequest;
+import com.example.savedog.Telemetry.DTO.TelemetryResponse;
+import com.example.savedog.Telemetry.domain.RobotLocation;
+import com.example.savedog.Telemetry.domain.Telemetry;
+import com.example.savedog.Telemetry.repository.TelemetryRepository;
+import com.example.savedog.global.validation.RequestValidator;
+import com.example.savedog.global.websocket.WebSocketService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Limit;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+@Slf4j
+@Service
+public class TelemetryService {
+    private static final double MAX_DISTANCE_CM = 400;
+    private static final double MAX_TILT_DEGREES = 180;
+    // 기간을 주지 않았을 때 돌려주는 최근 기록 수
+    private static final int DEFAULT_TRACK_SIZE = 1_000;
+    // 기간을 넓게 잡아도 한 번에 이보다 많이는 주지 않는다. (1초 주기로 약 2시간 47분 분량)
+    private static final int MAX_TRACK_SIZE = 10_000;
+    private static final LocalDateTime BEGINNING = LocalDateTime.of(1970, 1, 1, 0, 0);
+
+    private final TelemetryRepository telemetryRepository;
+    private final LocationService locationService;
+    private final SensorMergeService sensorMergeService;
+    private final SafetyService safetyService;
+    private final WebSocketService webSocketService;
+    private final DangerResponder dangerResponder;
+    private final HazardReportTrigger hazardReportTrigger;
+    private final TransactionTemplate transactionTemplate;
+    private final Clock clock;
+
+    public TelemetryService(
+            TelemetryRepository telemetryRepository,
+            LocationService locationService,
+            SensorMergeService sensorMergeService,
+            SafetyService safetyService,
+            WebSocketService webSocketService,
+            DangerResponder dangerResponder,
+            HazardReportTrigger hazardReportTrigger,
+            PlatformTransactionManager transactionManager,
+            Clock clock
+    ) {
+        this.telemetryRepository = telemetryRepository;
+        this.locationService = locationService;
+        this.sensorMergeService = sensorMergeService;
+        this.safetyService = safetyService;
+        this.webSocketService = webSocketService;
+        this.dangerResponder = dangerResponder;
+        this.hazardReportTrigger = hazardReportTrigger;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.clock = clock;
+    }
+
+    public TelemetryResponse receive(TelemetryRequest request) {
+        // 장치마다 자기가 재는 값만 보낸다. 빠진 값은 다른 장치가 방금 보낸 값으로 채운다.
+        SensorValues sensor = sensorMergeService.merge(validate(request));
+        RobotLocation location = locationService.findRecent().orElse(null);
+
+        // 센서 값 저장과 위험도 판단은 한 트랜잭션으로 묶는다.
+        Recorded recorded = transactionTemplate.execute(status -> {
+            Telemetry telemetry = telemetryRepository.save(
+                    new Telemetry(location, sensor.distance(), sensor.roll(), sensor.pitch())
+            );
+            return new Recorded(telemetry, safetyService.assess(telemetry));
+        });
+        TelemetryResponse response = TelemetryResponse.from(recorded.telemetry());
+        Assessed assessed = recorded.assessed();
+
+        // 저장이 끝난 뒤의 후속 처리. 여기서 실패해도 센서 값 수신 자체는 성공으로 응답한다.
+        runQuietly("실시간 전달", () -> webSocketService.broadcastTelemetry(response));
+        runQuietly("위험 시 자동 대응·알림", () -> dangerResponder.onAssessed(response));
+        runQuietly("신고 생성 판단", () ->
+                hazardReportTrigger.onAssessed(recorded.telemetry(), assessed.assessment(), assessed.record()));
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public List<TelemetryResponse> findTrack(LocalDateTime from, LocalDateTime to) {
+        if (from == null && to == null) {
+            List<Telemetry> latest = new ArrayList<>(
+                    telemetryRepository.findAllByOrderByRecordedAtDesc(Limit.of(DEFAULT_TRACK_SIZE))
+            );
+            Collections.reverse(latest);
+            return latest.stream().map(TelemetryResponse::from).toList();
+        }
+        LocalDateTime start = from == null ? BEGINNING : from;
+        LocalDateTime end = to == null ? LocalDateTime.now(clock) : to;
+        if (start.isAfter(end)) {
+            throw RequestValidator.invalid("from은 to보다 늦을 수 없습니다.");
+        }
+        return telemetryRepository
+                .findByRecordedAtBetweenOrderByRecordedAtAsc(start, end, Limit.of(MAX_TRACK_SIZE))
+                .stream()
+                .map(TelemetryResponse::from)
+                .toList();
+    }
+
+    private SensorValues validate(TelemetryRequest request) {
+        RequestValidator.required(request, "요청 본문");
+        SensorValues sensor = RequestValidator.required(request.sensor(), "sensor");
+        boolean hasRoll = sensor.roll() != null;
+        boolean hasPitch = sensor.pitch() != null;
+        if (!sensor.hasDistance() && !hasRoll && !hasPitch) {
+            throw RequestValidator.invalid("sensor에 distance 또는 roll·pitch 값이 필요합니다.");
+        }
+        // 기울기는 두 방향을 함께 봐야 판단할 수 있다.
+        if (hasRoll != hasPitch) {
+            throw RequestValidator.invalid("sensor.roll과 sensor.pitch는 함께 보내야 합니다.");
+        }
+        if (sensor.hasDistance()) {
+            RequestValidator.inRange(sensor.distance(), 0, MAX_DISTANCE_CM, "sensor.distance");
+        }
+        if (sensor.hasTilt()) {
+            RequestValidator.inRange(sensor.roll(), -MAX_TILT_DEGREES, MAX_TILT_DEGREES, "sensor.roll");
+            RequestValidator.inRange(sensor.pitch(), -MAX_TILT_DEGREES, MAX_TILT_DEGREES, "sensor.pitch");
+        }
+        return sensor;
+    }
+
+    private void runQuietly(String what, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException e) {
+            log.warn("센서 값은 저장했지만 후속 처리({})에 실패했습니다.", what, e);
+        }
+    }
+
+    private record Recorded(Telemetry telemetry, Assessed assessed) {
+    }
+}
