@@ -1,20 +1,40 @@
+
 name: CD
 
 on:
   push:
-    branch:
+    branches:
       - main
       - feat/pathfinding
-  workflows_dispatch:
+  workflow_dispatch:
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Upload deployment files to S3
+        run: |
+          aws s3 cp Dockerfile \
+            s3://${{ secrets.S3_BUCKET_NAME }}/savedog/deploy/Dockerfile
+
+          aws s3 cp docker-compose.yml \
+            s3://${{ secrets.S3_BUCKET_NAME }}/savedog/deploy/docker-compose.yml
+
       - name: Deploy backend
         uses: appleboy/ssh-action@v1
         with:
-          username: ubuntu
+          username: ${{ secrets.SERVER_USER }}
           host: ${{ secrets.SERVER_HOST }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
