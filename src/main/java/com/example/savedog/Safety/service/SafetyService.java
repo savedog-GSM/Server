@@ -37,7 +37,7 @@ public class SafetyService {
                 ? new GeoPoint(telemetry.getLatitude(), telemetry.getLongitude())
                 : null;
         SafetyAssessment assessment = safetyAnalyzer.analyze(
-                new SafetyContext(location, telemetry.getDistance(), telemetry.getRoll(), telemetry.getPitch())
+                new SafetyContext(location, telemetry.getDistance())
         );
         telemetry.applyRisk(assessment.level(), assessment.score(), assessment.reason());
 

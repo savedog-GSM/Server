@@ -10,6 +10,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -20,6 +22,11 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+// 중복 신고 확인은 생성 시각으로, 목록은 상태별 최신순으로 읽는다.
+@Table(indexes = {
+        @Index(name = "idx_hazard_report_created_at", columnList = "created_at"),
+        @Index(name = "idx_hazard_report_status_created_at", columnList = "status, created_at")
+})
 public class HazardReport {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
