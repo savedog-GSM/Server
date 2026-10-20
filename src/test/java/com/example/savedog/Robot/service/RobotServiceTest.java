@@ -147,7 +147,7 @@ class RobotServiceTest {
     @Test
     @DisplayName("상태 조회는 가장 최근 센서 값과 위험도를 돌려준다")
     void statusShowsLatestTelemetry() {
-        Telemetry telemetry = new Telemetry(null, 35.2, -2.5, 4.1);
+        Telemetry telemetry = new Telemetry(null, 35.2);
         telemetry.applyRisk(SafetyLevel.CAUTION, 3, "전방 35cm 장애물");
         when(telemetryRepository.findFirstByOrderByRecordedAtDesc()).thenReturn(Optional.of(telemetry));
         when(registry.isConnected()).thenReturn(true);

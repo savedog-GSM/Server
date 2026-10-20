@@ -29,7 +29,6 @@ import java.util.List;
 @Service
 public class TelemetryService {
     private static final double MAX_DISTANCE_CM = 400;
-    private static final double MAX_TILT_DEGREES = 180;
     // 기간을 주지 않았을 때 돌려주는 최근 기록 수
     private static final int DEFAULT_TRACK_SIZE = 1_000;
     // 기간을 넓게 잡아도 한 번에 이보다 많이는 주지 않는다. (1초 주기로 약 2시간 47분 분량)
@@ -38,7 +37,6 @@ public class TelemetryService {
 
     private final TelemetryRepository telemetryRepository;
     private final LocationService locationService;
-    private final SensorMergeService sensorMergeService;
     private final SafetyService safetyService;
     private final WebSocketService webSocketService;
     private final DangerResponder dangerResponder;
@@ -49,7 +47,6 @@ public class TelemetryService {
     public TelemetryService(
             TelemetryRepository telemetryRepository,
             LocationService locationService,
-            SensorMergeService sensorMergeService,
             SafetyService safetyService,
             WebSocketService webSocketService,
             DangerResponder dangerResponder,
@@ -59,7 +56,6 @@ public class TelemetryService {
     ) {
         this.telemetryRepository = telemetryRepository;
         this.locationService = locationService;
-        this.sensorMergeService = sensorMergeService;
         this.safetyService = safetyService;
         this.webSocketService = webSocketService;
         this.dangerResponder = dangerResponder;
@@ -69,14 +65,13 @@ public class TelemetryService {
     }
 
     public TelemetryResponse receive(TelemetryRequest request) {
-        // 장치마다 자기가 재는 값만 보낸다. 빠진 값은 다른 장치가 방금 보낸 값으로 채운다.
-        SensorValues sensor = sensorMergeService.merge(validate(request));
+        double distance = validate(request);
         RobotLocation location = locationService.findRecent().orElse(null);
 
         // 센서 값 저장과 위험도 판단은 한 트랜잭션으로 묶는다.
         Recorded recorded = transactionTemplate.execute(status -> {
             Telemetry telemetry = telemetryRepository.save(
-                    new Telemetry(location, sensor.distance(), sensor.roll(), sensor.pitch())
+                    new Telemetry(location, distance)
             );
             return new Recorded(telemetry, safetyService.assess(telemetry));
         });
@@ -112,26 +107,11 @@ public class TelemetryService {
                 .toList();
     }
 
-    private SensorValues validate(TelemetryRequest request) {
+    // 아두이노가 보낸 전방 거리(cm)를 꺼낸다.
+    private double validate(TelemetryRequest request) {
         RequestValidator.required(request, "요청 본문");
         SensorValues sensor = RequestValidator.required(request.sensor(), "sensor");
-        boolean hasRoll = sensor.roll() != null;
-        boolean hasPitch = sensor.pitch() != null;
-        if (!sensor.hasDistance() && !hasRoll && !hasPitch) {
-            throw RequestValidator.invalid("sensor에 distance 또는 roll·pitch 값이 필요합니다.");
-        }
-        // 기울기는 두 방향을 함께 봐야 판단할 수 있다.
-        if (hasRoll != hasPitch) {
-            throw RequestValidator.invalid("sensor.roll과 sensor.pitch는 함께 보내야 합니다.");
-        }
-        if (sensor.hasDistance()) {
-            RequestValidator.inRange(sensor.distance(), 0, MAX_DISTANCE_CM, "sensor.distance");
-        }
-        if (sensor.hasTilt()) {
-            RequestValidator.inRange(sensor.roll(), -MAX_TILT_DEGREES, MAX_TILT_DEGREES, "sensor.roll");
-            RequestValidator.inRange(sensor.pitch(), -MAX_TILT_DEGREES, MAX_TILT_DEGREES, "sensor.pitch");
-        }
-        return sensor;
+        return RequestValidator.inRange(sensor.distance(), 0, MAX_DISTANCE_CM, "sensor.distance");
     }
 
     private void runQuietly(String what, Runnable action) {
