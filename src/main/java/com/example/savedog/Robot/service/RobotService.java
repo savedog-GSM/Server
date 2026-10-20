@@ -35,8 +35,10 @@ public class RobotService {
     private static final Set<CommandType> MOVES = Set.of(
             CommandType.FORWARD, CommandType.BACKWARD, CommandType.TURN_LEFT, CommandType.TURN_RIGHT
     );
+    private static final Set<CommandType> TURNS = Set.of(CommandType.TURN_LEFT, CommandType.TURN_RIGHT);
     private static final int MAX_SPEED_PERCENT = 100;
     private static final int MAX_DURATION_MS = 60_000;
+    private static final int MAX_TURN_DEGREES = 360;
     private static final int DEFAULT_BARK_DURATION_MS = 1_000;
     private static final int REMEMBERED_COMMANDS = 100;
 
@@ -79,9 +81,10 @@ public class RobotService {
         CommandType type = RequestValidator.required(request.type(), "type");
         boolean move = MOVES.contains(type);
 
-        // 속도는 이동 명령에만, 시간은 이동과 짖기에만 의미가 있다. 그 밖의 명령에 딸려 온 값은 버린다.
+        // 속도는 이동 명령과 재개(전진)에만, 시간은 이동과 짖기에만, 각도는 회전에만 의미가 있다.
+        // 그 밖의 명령에 딸려 온 값은 버린다.
         Integer speed = null;
-        if (move && request.speed() != null) {
+        if ((move || type == CommandType.RESUME) && request.speed() != null) {
             speed = RequestValidator.inRange(request.speed(), 0, MAX_SPEED_PERCENT, "speed");
         }
         Integer durationMs = null;
@@ -91,8 +94,16 @@ public class RobotService {
         if (type == CommandType.BARK && durationMs == null) {
             durationMs = DEFAULT_BARK_DURATION_MS;
         }
+        Integer degrees = null;
+        if (TURNS.contains(type) && request.degrees() != null) {
+            degrees = RequestValidator.inRange(request.degrees(), 1, MAX_TURN_DEGREES, "degrees");
+            // 각도만큼 돌고 멈추는 것과 시간만큼 도는 것은 함께 정할 수 없다.
+            if (durationMs != null) {
+                throw RequestValidator.invalid("회전에는 degrees와 durationMs 중 하나만 보낼 수 있습니다.");
+            }
+        }
 
-        RobotCommandMessage message = dispatch(type, speed, durationMs);
+        RobotCommandMessage message = dispatch(type, speed, durationMs, degrees);
         return new RobotCommandResponse(message.commandId(), type, LocalDateTime.now());
     }
 
@@ -137,8 +148,12 @@ public class RobotService {
     }
 
     private RobotCommandMessage dispatch(CommandType type, Integer speed, Integer durationMs) {
+        return dispatch(type, speed, durationMs, null);
+    }
+
+    private RobotCommandMessage dispatch(CommandType type, Integer speed, Integer durationMs, Integer degrees) {
         RobotCommandMessage message = new RobotCommandMessage(
-                commandSequence.incrementAndGet(), type, speed, durationMs
+                commandSequence.incrementAndGet(), type, speed, durationMs, degrees
         );
         commandSender.send(message);
         recentCommands.put(message.commandId(), type);

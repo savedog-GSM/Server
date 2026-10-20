@@ -4,6 +4,7 @@ import com.example.savedog.global.exception.BusinessException;
 import com.example.savedog.global.exception.ErrorCode;
 import com.example.savedog.global.security.ApiRequestGuardFilter;
 import com.example.savedog.global.storage.ImageStorage;
+import com.example.savedog.global.storage.JpegImage;
 import com.example.savedog.global.validation.RequestValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,7 +38,7 @@ public class CameraFrameService {
         if (jpeg.length > MAX_FRAME_BYTES) {
             throw new BusinessException(ErrorCode.PAYLOAD_TOO_LARGE, "프레임은 2MB 이하여야 합니다.");
         }
-        if (!looksLikeJpeg(jpeg)) {
+        if (!JpegImage.looksLikeJpeg(jpeg)) {
             throw RequestValidator.invalid("JPEG 이미지가 아닙니다.");
         }
         imageStorage.put(LATEST_FRAME_KEY, jpeg, JPEG_CONTENT_TYPE);
@@ -60,13 +61,5 @@ public class CameraFrameService {
         }
         boolean recent = Duration.between(storedAt, LocalDateTime.now(clock)).compareTo(RECENT) <= 0;
         return recent ? Optional.of(LATEST_FRAME_KEY) : Optional.empty();
-    }
-
-    // JPEG 파일은 항상 FF D8 FF로 시작한다.
-    private boolean looksLikeJpeg(byte[] bytes) {
-        return bytes.length >= 3
-                && (bytes[0] & 0xFF) == 0xFF
-                && (bytes[1] & 0xFF) == 0xD8
-                && (bytes[2] & 0xFF) == 0xFF;
     }
 }

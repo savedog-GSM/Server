@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -173,6 +174,70 @@ class RobotServiceTest {
         assertNull(status.lastSeenAt());
         assertNull(status.sensor());
         assertNull(status.risk());
+    }
+
+    @Test
+    @DisplayName("회전은 각도를 실어 보내고, 다른 명령에 딸려 온 각도는 버린다")
+    void turnCarriesDegrees() {
+        service.sendCommand(new RobotCommandRequest(CommandType.TURN_RIGHT, 30, null, 90));
+        RobotCommandMessage turn = sentMessage();
+        assertEquals(CommandType.TURN_RIGHT, turn.type());
+        assertEquals(90, turn.degrees());
+        assertEquals(30, turn.speed());
+        assertNull(turn.durationMs());
+
+        RobotCommandMessage forward = sendAndCapture(new RobotCommandRequest(CommandType.FORWARD, 50, 1000, 90));
+        assertNull(forward.degrees());
+    }
+
+    @Test
+    @DisplayName("각도가 범위를 벗어나거나 시간과 함께 오면 보내지 않는다")
+    void rejectsInvalidDegrees() {
+        assertError(ErrorCode.INVALID_REQUEST,
+                () -> service.sendCommand(new RobotCommandRequest(CommandType.TURN_LEFT, null, null, 0)));
+        assertError(ErrorCode.INVALID_REQUEST,
+                () -> service.sendCommand(new RobotCommandRequest(CommandType.TURN_LEFT, null, null, 361)));
+        assertError(ErrorCode.INVALID_REQUEST,
+                () -> service.sendCommand(new RobotCommandRequest(CommandType.TURN_LEFT, null, 1000, 90)));
+        verify(sender, never()).send(any());
+    }
+
+    @Test
+    @DisplayName("비상 정지는 값을 싣지 않고, 재개는 속도만 싣는다")
+    void emergencyStopAndResume() {
+        RobotCommandMessage stop = sendAndCapture(new RobotCommandRequest(CommandType.EMERGENCY_STOP, 50, 1000, 90));
+        assertEquals(CommandType.EMERGENCY_STOP, stop.type());
+        assertNull(stop.speed());
+        assertNull(stop.durationMs());
+        assertNull(stop.degrees());
+
+        RobotCommandMessage resume = sendAndCapture(new RobotCommandRequest(CommandType.RESUME, 40, 1000, 90));
+        assertEquals(CommandType.RESUME, resume.type());
+        assertEquals(40, resume.speed());
+        assertNull(resume.durationMs());
+        assertNull(resume.degrees());
+
+        assertError(ErrorCode.INVALID_REQUEST,
+                () -> service.sendCommand(new RobotCommandRequest(CommandType.RESUME, 101, null)));
+    }
+
+    @Test
+    @DisplayName("각도는 있을 때만 메시지에 실린다")
+    void degreesOnlyInJsonWhenPresent() {
+        JsonMapper json = JsonMapper.builder().build();
+
+        String plain = json.writeValueAsString(new RobotCommandMessage(1L, CommandType.STOP, null, null));
+        String turn = json.writeValueAsString(new RobotCommandMessage(2L, CommandType.TURN_LEFT, 50, null, 90));
+
+        assertFalse(plain.contains("degrees"), plain);
+        assertTrue(plain.contains("\"speed\":null"), plain);
+        assertTrue(turn.contains("\"degrees\":90"), turn);
+    }
+
+    private RobotCommandMessage sendAndCapture(RobotCommandRequest request) {
+        clearInvocations(sender);
+        service.sendCommand(request);
+        return sentMessage();
     }
 
     private RobotCommandMessage sentMessage() {

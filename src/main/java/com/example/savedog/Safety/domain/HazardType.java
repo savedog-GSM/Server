@@ -4,8 +4,10 @@ package com.example.savedog.Safety.domain;
 public enum HazardType {
     // 전방 거리 기준에 걸림
     OBSTACLE,
-    // 기울기 기준에 걸림 (급경사, 노면 불량).
-    // 기울기 판단을 없애서 새로 만들어지지는 않는다. 예전에 저장된 신고를 읽을 수 있게 남겨 둔다.
+    // 노면 파손·급경사. 중계 프로그램이 노면 파손(GROUND_DAMAGE)을 신고하면 이 값이 된다.
+    // 기울기 판단은 없앴으므로 센서 값으로는 만들어지지 않는다.
     ROUGH_ROAD,
+    // 화재. 중계 프로그램의 화재(FIRE) 신고
+    FIRE,
     ETC
 }

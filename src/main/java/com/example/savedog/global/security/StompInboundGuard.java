@@ -24,7 +24,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class StompInboundGuard implements ChannelInterceptor {
     private static final Set<String> SUBSCRIBABLE = Set.of(
-            "/topic/robot/telemetry", "/topic/robot/status", "/topic/reports", "/topic/alerts"
+            "/topic/robot/telemetry", "/topic/robot/status", "/topic/robot/events", "/topic/reports", "/topic/alerts"
     );
     private static final String AUTHENTICATED = "savedog.authenticated";
 

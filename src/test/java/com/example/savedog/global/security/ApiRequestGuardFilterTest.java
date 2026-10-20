@@ -75,6 +75,21 @@ class ApiRequestGuardFilterTest {
     }
 
     @Test
+    @DisplayName("위험 신고 업로드 주소는 사진 2MB에 항목 몫까지 받는다")
+    void hazardUploadHasLargerLimit() throws Exception {
+        filter.doFilter(post("/api/robot/hazards", 2 * KB * KB + 10 * KB), response, readsWholeBody);
+        assertEquals(2 * KB * KB + 10 * KB, bytesReadByController.get());
+
+        MockHttpServletResponse tooLarge = new MockHttpServletResponse();
+        filter.doFilter(post("/api/robot/hazards", 2 * KB * KB + 64 * KB + 1), tooLarge, readsWholeBody);
+        assertEquals(413, tooLarge.getStatus());
+
+        MockHttpServletResponse disguised = new MockHttpServletResponse();
+        filter.doFilter(post("/api/robot/hazards/", 500 * KB), disguised, readsWholeBody);
+        assertEquals(413, disguised.getStatus());
+    }
+
+    @Test
     @DisplayName("프레임 주소를 변형해도 큰 한도를 받지 못한다")
     void disguisedFramePathGetsSmallLimit() throws IOException, jakarta.servlet.ServletException {
         for (String path : new String[]{"/api/robot/frames/", "/api/robot/%66rames", "/api/robot/frames;x=1", "/api/robot/frames/latest"}) {

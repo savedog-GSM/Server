@@ -4,6 +4,7 @@ import com.example.savedog.Safety.domain.HazardType;
 import com.example.savedog.Safety.domain.SafetyLevel;
 import com.example.savedog.global.exception.BusinessException;
 import com.example.savedog.global.exception.ErrorCode;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,6 +15,8 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AccessLevel;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -34,7 +37,10 @@ public class HazardReport {
 
     private Long safetyRecordId;
 
+    // DB의 ENUM 타입으로 두면 종류를 늘릴 때마다 기존 테이블을 고쳐야 해서 문자열로 저장한다. (HazardTypeColumn)
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(length = 32)
     private HazardType hazardType;
 
     private double latitude;

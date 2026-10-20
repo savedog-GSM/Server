@@ -205,6 +205,7 @@ public class ReportService {
                             .formatted(Math.round(telemetry.getDistance()));
             // 기울기 판단을 없애서 새 신고에는 나오지 않는다.
             case ROUGH_ROAD -> "노면이 위험합니다.";
+            case FIRE -> "화재가 감지되었습니다.";
             case ETC -> assessment.reason() == null
                     ? "위험 구간이 감지되었습니다."
                     : "위험 구간이 감지되었습니다. (" + assessment.reason() + ")";

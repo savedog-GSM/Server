@@ -17,6 +17,7 @@ public enum ErrorCode {
     PATH_NOT_FOUND(HttpStatus.NOT_FOUND, "경로를 찾지 못했습니다."),
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "신고를 찾을 수 없습니다."),
     ROBOT_NOT_CONNECTED(HttpStatus.CONFLICT, "로보독이 연결되어 있지 않습니다."),
+    LOCATION_UNAVAILABLE(HttpStatus.CONFLICT, "최근에 받은 스마트폰 위치가 없습니다."),
     REPORT_ALREADY_PROCESSED(HttpStatus.CONFLICT, "이미 처리된 신고입니다."),
     REPORT_SUBMIT_FAILED(HttpStatus.BAD_GATEWAY, "민원 창구 제출에 실패했습니다."),
     IMAGE_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "이미지 저장소를 사용할 수 없습니다."),

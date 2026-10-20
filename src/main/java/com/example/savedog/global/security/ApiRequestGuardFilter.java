@@ -33,7 +33,10 @@ import java.nio.charset.StandardCharsets;
 public class ApiRequestGuardFilter extends OncePerRequestFilter {
     public static final int MAX_FRAME_BYTES = 2 * 1024 * 1024;
     private static final int MAX_JSON_BYTES = 64 * 1024;
+    // 위험 신고는 사진(최대 2MB)에 글자 항목과 multipart 경계가 붙는다.
+    private static final int MAX_HAZARD_UPLOAD_BYTES = MAX_FRAME_BYTES + MAX_JSON_BYTES;
     private static final String FRAME_UPLOAD_PATH = "/api/robot/frames";
+    private static final String HAZARD_UPLOAD_PATH = "/api/robot/hazards";
 
     private final ErrorResponseWriter errorResponseWriter;
 
@@ -43,13 +46,23 @@ public class ApiRequestGuardFilter extends OncePerRequestFilter {
         response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 
-        // 큰 한도는 프레임 업로드 주소와 글자 그대로 같을 때만 준다. 변형된 주소는 작은 한도를 받는다.
-        long limit = FRAME_UPLOAD_PATH.equals(request.getRequestURI()) ? MAX_FRAME_BYTES : MAX_JSON_BYTES;
+        // 큰 한도는 업로드 주소와 글자 그대로 같을 때만 준다. 변형된 주소는 작은 한도를 받는다.
+        long limit = limitFor(request.getRequestURI());
         if (request.getContentLengthLong() > limit) {
             errorResponseWriter.write(response, ErrorCode.PAYLOAD_TOO_LARGE);
             return;
         }
         chain.doFilter(new SizeLimitedRequest(request, limit), response);
+    }
+
+    private static long limitFor(String uri) {
+        if (FRAME_UPLOAD_PATH.equals(uri)) {
+            return MAX_FRAME_BYTES;
+        }
+        if (HAZARD_UPLOAD_PATH.equals(uri)) {
+            return MAX_HAZARD_UPLOAD_BYTES;
+        }
+        return MAX_JSON_BYTES;
     }
 
     private static final class SizeLimitedRequest extends HttpServletRequestWrapper {

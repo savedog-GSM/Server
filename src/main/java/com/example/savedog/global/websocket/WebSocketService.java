@@ -3,6 +3,7 @@ package com.example.savedog.global.websocket;
 import com.example.savedog.Report.DTO.ReportResponse;
 import com.example.savedog.Robot.DTO.DangerAlert;
 import com.example.savedog.Robot.DTO.RobotConnectionEvent;
+import com.example.savedog.Robot.DTO.RobotEventMessage;
 import com.example.savedog.Telemetry.DTO.TelemetryResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.MessagingException;
@@ -33,6 +34,10 @@ public class WebSocketService {
     // 새 구독 주소를 추가하면 StompInboundGuard의 허용 목록에도 넣어야 화면이 구독할 수 있다.
     public void broadcastAlert(DangerAlert alert) {
         send("/topic/alerts", alert);
+    }
+
+    public void broadcastRobotEvent(RobotEventMessage event) {
+        send("/topic/robot/events", event);
     }
 
     // 화면에 알리지 못했다고 해서 호출한 쪽의 작업(저장, 연결 처리 등)까지 실패시키지 않는다.

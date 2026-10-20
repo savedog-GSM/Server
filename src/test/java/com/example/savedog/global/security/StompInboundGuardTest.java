@@ -40,6 +40,7 @@ class StompInboundGuardTest {
 
         assertPassed(guard, frame(StompCommand.SUBSCRIBE, "/topic/robot/telemetry", null));
         assertPassed(guard, frame(StompCommand.SUBSCRIBE, "/topic/robot/status", null));
+        assertPassed(guard, frame(StompCommand.SUBSCRIBE, "/topic/robot/events", null));
         assertPassed(guard, frame(StompCommand.SUBSCRIBE, "/topic/reports", null));
         assertPassed(guard, frame(StompCommand.SUBSCRIBE, "/topic/alerts", null));
 

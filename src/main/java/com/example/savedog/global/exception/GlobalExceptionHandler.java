@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.web.util.DisconnectedClientHelper;
 
@@ -39,6 +40,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ErrorResponse> handleConcurrentUpdate(ObjectOptimisticLockingFailureException e) {
         ErrorCode errorCode = ErrorCode.REPORT_ALREADY_PROCESSED;
         return ResponseEntity.status(errorCode.getStatus()).body(ErrorResponse.from(errorCode));
+    }
+
+    // multipart 본문이 깨졌거나 경계가 맞지 않는 경우. 크기 초과(MaxUploadSizeExceededException)는 부모 클래스가 413으로 처리한다.
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleBrokenMultipart(MultipartException e) {
+        ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
+        return ResponseEntity.status(errorCode.getStatus())
+                .body(ErrorResponse.of(errorCode, "multipart/form-data 본문을 읽을 수 없습니다."));
     }
 
     // 위에서 잡지 못한 나머지. 내부 사정은 응답에 싣지 않고 로그에만 남긴다.

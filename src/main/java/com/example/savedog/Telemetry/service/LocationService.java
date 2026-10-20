@@ -44,11 +44,16 @@ public class LocationService {
 
     // 센서 값에 붙여도 되는 위치만 돌려준다: 받은 지 5초 이내이고 오차 반경이 30m 이하
     public Optional<RobotLocation> findRecent() {
+        return findRecent(MAX_AGE);
+    }
+
+    // 받은 지 maxAge 이내이고 오차 반경이 30m 이하인 위치. 로보독이 멈춰 선 자리의 신고처럼 조금 지난 위치도 쓸 때
+    public Optional<RobotLocation> findRecent(Duration maxAge) {
         RobotLocation location = latest.get();
         if (location == null) {
             return Optional.empty();
         }
-        boolean fresh = Duration.between(location.receivedAt(), LocalDateTime.now(clock)).compareTo(MAX_AGE) <= 0;
+        boolean fresh = Duration.between(location.receivedAt(), LocalDateTime.now(clock)).compareTo(maxAge) <= 0;
         boolean accurate = location.accuracy() == null || location.accuracy() <= MAX_ACCURACY_METERS;
         return fresh && accurate ? Optional.of(location) : Optional.empty();
     }
