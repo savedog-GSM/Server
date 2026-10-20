@@ -4,6 +4,7 @@ on:
   push:
     branch:
       - main
+      - feat/pathfinding
   workflows_dispatch:
 
 jobs:
