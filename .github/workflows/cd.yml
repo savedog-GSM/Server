@@ -36,7 +36,7 @@ jobs:
         with:
           username: ${{ secrets.SERVER_USER }}
           host: ${{ secrets.SERVER_HOST }}
-          password: ${{ secrets.SERVER_PASSWORD }}
+          key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
             cd ~/Server
