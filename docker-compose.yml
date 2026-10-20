@@ -25,10 +25,10 @@ services:
     ports:
       - "3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${RDB_PASSWORD}
+      MYSQL_DATABASE: ${RDB_SCHEMA}
+      MYSQL_USER: ${RDB_USERNAME}
+      MYSQL_PASSWORD: ${RDB_PASSWORD}
       TZ: Asia/Seoul
     volumes:
       - mysql_data:/var/lib/mysql
