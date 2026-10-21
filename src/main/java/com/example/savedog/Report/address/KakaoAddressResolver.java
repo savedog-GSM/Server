@@ -21,12 +21,17 @@ public class KakaoAddressResolver implements AddressResolver {
     private final JsonMapper jsonMapper;
 
     public KakaoAddressResolver(String restApiKey, JsonMapper jsonMapper) {
+        this(BASE_URL, restApiKey, jsonMapper);
+    }
+
+    // 테스트에서 가짜 카카오 서버로 보내기 위한 것
+    KakaoAddressResolver(String baseUrl, String restApiKey, JsonMapper jsonMapper) {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(TIMEOUT).build()
         );
         requestFactory.setReadTimeout(TIMEOUT);
         this.restClient = RestClient.builder()
-                .baseUrl(BASE_URL)
+                .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "KakaoAK " + restApiKey)
                 .build();
