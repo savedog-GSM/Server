@@ -1,5 +1,6 @@
 package com.example.savedog.Telemetry.service;
 
+import com.example.savedog.Vision.service.VisionService;
 import com.example.savedog.global.exception.BusinessException;
 import com.example.savedog.global.exception.ErrorCode;
 import com.example.savedog.global.security.ApiRequestGuardFilter;
@@ -7,6 +8,7 @@ import com.example.savedog.global.storage.ImageStorage;
 import com.example.savedog.global.storage.JpegImage;
 import com.example.savedog.global.validation.RequestValidator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -14,9 +16,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 // 프레임 이미지는 S3에 둔다. 최신 1장을 같은 키에 덮어써서 용량이 늘지 않게 한다.
+// 물체 인식 모델이 켜져 있으면 받은 프레임을 VisionService에도 넘긴다.
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CameraFrameService {
@@ -28,8 +33,10 @@ public class CameraFrameService {
     private static final Duration RECENT = Duration.ofSeconds(10);
 
     private final ImageStorage imageStorage;
+    private final VisionService visionService;
     private final Clock clock;
     private final AtomicReference<LocalDateTime> lastStoredAt = new AtomicReference<>();
+    private final AtomicBoolean storageWarned = new AtomicBoolean();
 
     public void store(byte[] jpeg) {
         if (jpeg == null || jpeg.length == 0) {
@@ -41,8 +48,24 @@ public class CameraFrameService {
         if (!JpegImage.looksLikeJpeg(jpeg)) {
             throw RequestValidator.invalid("JPEG 이미지가 아닙니다.");
         }
-        imageStorage.put(LATEST_FRAME_KEY, jpeg, JPEG_CONTENT_TYPE);
+        boolean analyzing = visionService.submit(jpeg);
+        try {
+            imageStorage.put(LATEST_FRAME_KEY, jpeg, JPEG_CONTENT_TYPE);
+        } catch (BusinessException e) {
+            // 카메라 판단에 쓰고 있다면 S3가 없거나 잠깐 안 돼도 프레임은 받은 것으로 본다. (화면 표시·신고 사진만 빠진다)
+            if (analyzing && e.getErrorCode() == ErrorCode.IMAGE_STORAGE_UNAVAILABLE) {
+                warnStorageOnce(e);
+                return;
+            }
+            throw e;
+        }
         lastStoredAt.set(LocalDateTime.now(clock));
+    }
+
+    private void warnStorageOnce(BusinessException e) {
+        if (storageWarned.compareAndSet(false, true)) {
+            log.warn("카메라 프레임을 S3에 저장하지 못해 물체 인식에만 씁니다. (이후 같은 경고는 생략) {}", e.getMessage());
+        }
     }
 
     public URI getLatestUrl() {
