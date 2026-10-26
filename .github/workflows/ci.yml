@@ -34,17 +34,3 @@ jobs:
 
       - name: Build
         run: ./gradlew build --parallel --build-cache
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Upload JAR to S3
-        run: |
-          aws s3 cp build/libs/ s3://${{ secret.S3_BUCKET_NAME }}/savedog/builds/${{ github.sha }}/ \
-            --recursive \
-            --exclude "*" \
-            --include "*.jar"
