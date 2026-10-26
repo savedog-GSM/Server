@@ -8,6 +8,7 @@ import com.example.savedog.Safety.analyzer.SafetyContext;
 import com.example.savedog.Safety.domain.SafetyRecord;
 import com.example.savedog.Safety.repository.SafetyRecordRepository;
 import com.example.savedog.Telemetry.domain.Telemetry;
+import com.example.savedog.Vision.service.VisionService;
 import com.example.savedog.global.common.GeoPoint;
 import com.example.savedog.global.validation.RequestValidator;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class SafetyService {
 
     private final SafetyAnalyzer safetyAnalyzer;
     private final SafetyRecordRepository safetyRecordRepository;
+    private final VisionService visionService;
 
     // 센서 값 저장과 같은 트랜잭션 안에서 불린다.
     @Transactional
@@ -36,9 +38,11 @@ public class SafetyService {
         GeoPoint location = telemetry.hasLocation()
                 ? new GeoPoint(telemetry.getLatitude(), telemetry.getLongitude())
                 : null;
-        SafetyAssessment assessment = safetyAnalyzer.analyze(
-                new SafetyContext(location, telemetry.getDistance())
-        );
+        SafetyAssessment assessment = safetyAnalyzer.analyze(new SafetyContext(
+                location,
+                telemetry.getDistance(),
+                visionService.findRecentFinding().orElse(null)
+        ));
         telemetry.applyRisk(assessment.level(), assessment.score(), assessment.reason());
 
         // 위치 없는 결과는 지도에 찍을 수 없으므로 위험도 기록으로는 남기지 않는다.

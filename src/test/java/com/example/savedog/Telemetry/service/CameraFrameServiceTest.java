@@ -1,5 +1,6 @@
 package com.example.savedog.Telemetry.service;
 
+import com.example.savedog.Vision.service.VisionService;
 import com.example.savedog.global.exception.BusinessException;
 import com.example.savedog.global.exception.ErrorCode;
 import com.example.savedog.global.storage.ImageStorage;
@@ -17,13 +18,20 @@ import static com.example.savedog.support.Errors.assertError;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class CameraFrameServiceTest {
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 1, 2, 3};
 
     private final MutableClock clock = new MutableClock();
     private final FakeStorage storage = new FakeStorage();
-    private final CameraFrameService service = new CameraFrameService(storage, clock);
+    private final VisionService vision = mock(VisionService.class);
+    private final CameraFrameService service = new CameraFrameService(storage, vision, clock);
 
     @Test
     @DisplayName("프레임을 받으면 같은 키에 덮어써 저장한다")
@@ -87,7 +95,7 @@ class CameraFrameServiceTest {
     @Test
     @DisplayName("S3를 설정하지 않았으면 이미지 기능만 503으로 응답한다")
     void unconfiguredStorage() {
-        CameraFrameService unconfigured = new CameraFrameService(new UnconfiguredImageStorage(), clock);
+        CameraFrameService unconfigured = new CameraFrameService(new UnconfiguredImageStorage(), vision, clock);
 
         assertError(ErrorCode.IMAGE_STORAGE_UNAVAILABLE, () -> unconfigured.store(JPEG));
         assertError(ErrorCode.IMAGE_STORAGE_UNAVAILABLE, unconfigured::getLatestUrl);
@@ -101,6 +109,28 @@ class CameraFrameServiceTest {
 
         assertError(ErrorCode.IMAGE_STORAGE_UNAVAILABLE, () -> service.store(JPEG));
         assertTrue(service.findRecentKey().isEmpty());
+    }
+
+    @Test
+    @DisplayName("물체 인식에 쓰이면 S3가 없어도 프레임을 받은 것으로 본다 (신고 사진으로는 쓰지 않는다)")
+    void analyzedFrameIsAcceptedWithoutStorage() {
+        when(vision.submit(JPEG)).thenReturn(true);
+        CameraFrameService unconfigured = new CameraFrameService(new UnconfiguredImageStorage(), vision, clock);
+
+        unconfigured.store(JPEG);
+        unconfigured.store(JPEG);
+
+        verify(vision, times(2)).submit(JPEG);
+        assertTrue(unconfigured.findRecentKey().isEmpty());
+    }
+
+    @Test
+    @DisplayName("JPEG가 아니거나 비어 있으면 물체 인식에도 넘기지 않는다")
+    void invalidFrameIsNotAnalyzed() {
+        assertError(ErrorCode.INVALID_REQUEST, () -> service.store(new byte[]{1, 2, 3}));
+        assertError(ErrorCode.INVALID_REQUEST, () -> service.store(new byte[0]));
+
+        verify(vision, never()).submit(any());
     }
 
     private static class FakeStorage implements ImageStorage {
