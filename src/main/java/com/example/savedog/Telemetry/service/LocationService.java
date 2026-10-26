@@ -47,6 +47,11 @@ public class LocationService {
         return findRecent(MAX_AGE);
     }
 
+    // /api/robot/status에서 센서 수신 여부와 관계없이 마지막으로 받은 위치를 표시할 때 쓴다.
+    public Optional<RobotLocation> latest() {
+        return Optional.ofNullable(latest.get());
+    }
+
     // 받은 지 maxAge 이내이고 오차 반경이 30m 이하인 위치. 로보독이 멈춰 선 자리의 신고처럼 조금 지난 위치도 쓸 때
     public Optional<RobotLocation> findRecent(Duration maxAge) {
         RobotLocation location = latest.get();

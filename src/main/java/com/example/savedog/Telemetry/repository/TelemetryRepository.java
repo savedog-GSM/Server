@@ -14,7 +14,7 @@ import java.util.Optional;
 public interface TelemetryRepository extends JpaRepository<Telemetry, Long> {
     List<Telemetry> findAllByOrderByRecordedAtDesc(Limit limit);
 
-    List<Telemetry> findByRecordedAtBetweenOrderByRecordedAtAsc(LocalDateTime from, LocalDateTime to, Limit limit);
+    List<Telemetry> findByRecordedAtBetweenOrderByRecordedAtDesc(LocalDateTime from, LocalDateTime to, Limit limit);
 
     Optional<Telemetry> findFirstByOrderByRecordedAtDesc();
 }

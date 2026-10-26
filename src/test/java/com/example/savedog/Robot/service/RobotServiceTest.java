@@ -9,6 +9,7 @@ import com.example.savedog.Robot.websocket.RobotCommandSender;
 import com.example.savedog.Robot.websocket.RobotSessionRegistry;
 import com.example.savedog.Safety.domain.SafetyLevel;
 import com.example.savedog.Telemetry.domain.Telemetry;
+import com.example.savedog.Telemetry.DTO.LocationRequest;
 import com.example.savedog.Telemetry.repository.TelemetryRepository;
 import com.example.savedog.Telemetry.service.LocationService;
 import com.example.savedog.global.exception.BusinessException;
@@ -171,6 +172,23 @@ class RobotServiceTest {
         RobotStatusResponse status = service.getStatus();
 
         assertFalse(status.connected());
+        assertNull(status.lastSeenAt());
+        assertNull(status.sensor());
+        assertNull(status.risk());
+    }
+
+    @Test
+    @DisplayName("센서 기록이 없어도 마지막으로 받은 GPS 좌표를 상태에 돌려준다")
+    void statusShowsLocationWithoutTelemetry() {
+        locationService.store(new LocationRequest(35.14332, 126.80079, 5.0, 0.4));
+        when(telemetryRepository.findFirstByOrderByRecordedAtDesc()).thenReturn(Optional.empty());
+
+        RobotStatusResponse status = service.getStatus();
+
+        assertEquals(35.14332, status.latitude());
+        assertEquals(126.80079, status.longitude());
+        assertEquals(0.4, status.speed());
+        assertEquals(locationService.lastReceivedAt().orElseThrow(), status.lastLocationAt());
         assertNull(status.lastSeenAt());
         assertNull(status.sensor());
         assertNull(status.risk());

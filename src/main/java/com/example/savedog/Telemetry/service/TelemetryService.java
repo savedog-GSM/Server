@@ -21,8 +21,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 @Slf4j
@@ -89,10 +87,9 @@ public class TelemetryService {
     @Transactional(readOnly = true)
     public List<TelemetryResponse> findTrack(LocalDateTime from, LocalDateTime to) {
         if (from == null && to == null) {
-            List<Telemetry> latest = new ArrayList<>(
-                    telemetryRepository.findAllByOrderByRecordedAtDesc(Limit.of(DEFAULT_TRACK_SIZE))
+            List<Telemetry> latest = telemetryRepository.findAllByOrderByRecordedAtDesc(
+                    Limit.of(DEFAULT_TRACK_SIZE)
             );
-            Collections.reverse(latest);
             return latest.stream().map(TelemetryResponse::from).toList();
         }
         LocalDateTime start = from == null ? BEGINNING : from;
@@ -101,7 +98,7 @@ public class TelemetryService {
             throw RequestValidator.invalid("from은 to보다 늦을 수 없습니다.");
         }
         return telemetryRepository
-                .findByRecordedAtBetweenOrderByRecordedAtAsc(start, end, Limit.of(MAX_TRACK_SIZE))
+                .findByRecordedAtBetweenOrderByRecordedAtDesc(start, end, Limit.of(MAX_TRACK_SIZE))
                 .stream()
                 .map(TelemetryResponse::from)
                 .toList();

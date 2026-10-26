@@ -60,20 +60,30 @@ public class RobotService {
     @Transactional(readOnly = true)
     public RobotStatusResponse getStatus() {
         boolean connected = sessionRegistry.isConnected();
-        LocalDateTime lastLocationAt = locationService.lastReceivedAt().orElse(null);
+        var location = locationService.latest().orElse(null);
+        LocalDateTime lastLocationAt = location == null ? null : location.receivedAt();
         return telemetryRepository.findFirstByOrderByRecordedAtDesc()
                 .map(TelemetryResponse::from)
                 .map(latest -> new RobotStatusResponse(
                         connected,
                         latest.recordedAt(),
                         lastLocationAt,
-                        latest.latitude(),
-                        latest.longitude(),
-                        latest.speed(),
+                        location == null ? latest.latitude() : Double.valueOf(location.latitude()),
+                        location == null ? latest.longitude() : Double.valueOf(location.longitude()),
+                        location != null && location.speed() != null ? location.speed() : latest.speed(),
                         latest.sensor(),
                         latest.risk()
                 ))
-                .orElseGet(() -> new RobotStatusResponse(connected, null, lastLocationAt, null, null, null, null, null));
+                .orElseGet(() -> new RobotStatusResponse(
+                        connected,
+                        null,
+                        lastLocationAt,
+                        location == null ? null : location.latitude(),
+                        location == null ? null : location.longitude(),
+                        location == null ? null : location.speed(),
+                        null,
+                        null
+                ));
     }
 
     public RobotCommandResponse sendCommand(RobotCommandRequest request) {
