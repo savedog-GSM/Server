@@ -3,6 +3,10 @@ package com.example.savedog.global.storage;
 import com.example.savedog.global.exception.BusinessException;
 import com.example.savedog.global.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
@@ -27,15 +31,27 @@ public class S3ImageStorage implements ImageStorage, AutoCloseable {
     private final S3Presigner presigner;
 
     public S3ImageStorage(String bucket, String region) {
+        this(bucket, region, "", "", "");
+    }
+
+    public S3ImageStorage(String bucket, String region, String accessKey, String secretKey, String sessionToken) {
         this.bucket = bucket;
+        AwsCredentialsProvider credentialsProvider = credentialsProvider(accessKey, secretKey, sessionToken);
         // 시간 제한이 없으면 S3가 느리거나 끊겼을 때 요청 스레드가 붙잡힌 채 쌓인다.
-        this.s3 = S3Client.builder()
+        var s3Builder = S3Client.builder()
                 .region(Region.of(region))
                 .overrideConfiguration(config -> config
                         .apiCallAttemptTimeout(ATTEMPT_TIMEOUT)
-                        .apiCallTimeout(CALL_TIMEOUT))
-                .build();
-        this.presigner = S3Presigner.builder().region(Region.of(region)).build();
+                        .apiCallTimeout(CALL_TIMEOUT));
+        var presignerBuilder = S3Presigner.builder().region(Region.of(region));
+        // 키가 제공되면 Spring 설정을 통해 전달된 환경 변수 자격 증명을 쓴다.
+        // 비어 있으면 SDK 기본 체인(예: EC2/ECS IAM 역할)을 유지한다.
+        if (credentialsProvider != null) {
+            s3Builder.credentialsProvider(credentialsProvider);
+            presignerBuilder.credentialsProvider(credentialsProvider);
+        }
+        this.s3 = s3Builder.build();
+        this.presigner = presignerBuilder.build();
     }
 
     @Override
@@ -83,6 +99,22 @@ public class S3ImageStorage implements ImageStorage, AutoCloseable {
     public void close() {
         presigner.close();
         s3.close();
+    }
+
+    private static AwsCredentialsProvider credentialsProvider(String accessKey, String secretKey, String sessionToken) {
+        String access = accessKey == null ? "" : accessKey.trim();
+        String secret = secretKey == null ? "" : secretKey.trim();
+        String token = sessionToken == null ? "" : sessionToken.trim();
+        if (access.isEmpty() && secret.isEmpty() && token.isEmpty()) {
+            return null;
+        }
+        if (access.isEmpty() || secret.isEmpty()) {
+            throw new IllegalStateException("AWS_ACCESS_KEY_ID와 AWS_SECRET_ACCESS_KEY를 함께 설정해야 합니다.");
+        }
+        if (!token.isEmpty()) {
+            return StaticCredentialsProvider.create(AwsSessionCredentials.create(access, secret, token));
+        }
+        return StaticCredentialsProvider.create(AwsBasicCredentials.create(access, secret));
     }
 
     // AWS 쪽 오류(자격 증명 없음, 버킷 없음, 네트워크 등)를 한 가지 오류로 바꾼다.

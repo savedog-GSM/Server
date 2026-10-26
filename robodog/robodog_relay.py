@@ -5,7 +5,9 @@
 #   - 서버가 보낸 명령(전진, 멈추기, 앉기, 짖기 등)을 받아 로보독을 움직이고 결과를 돌려준다.
 #   - 로보독의 기울기(roll, pitch)를 1초마다 서버로 보낸다. (거리는 아두이노가 따로 보낸다.)
 #
-# 필요한 패키지 (Thonny: 도구 > 패키지 관리): kocoafab_robodog, websockets
+# 필요한 패키지 (Thonny: 도구 > 패키지 관리): kocoafab_robodog, websockets, opencv-python
+# 카메라는 기본으로 이 PC의 웹캠 0번을 1초마다 올린다. 다른 카메라는 CAMERA_SOURCE 환경 변수로 지정한다.
+# 카메라 업로드를 끄려면 CAMERA_ENABLED=0, 서버 주소를 바꾸려면 SAVEDOG_SERVER 환경 변수를 지정한다.
 # 끝낼 때는 셸에서 Ctrl+C를 누른다. 그래야 로보독을 멈추고 연결을 닫은 뒤 끝난다.
 
 # 라이브러리가 내보내는 이름이 아래 모듈 이름을 가리지 않도록 가장 먼저 불러온다.
@@ -24,13 +26,32 @@ from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 
 # ───────── 설정 ─────────
-SERVER = "localhost:8080"       # 서버 주소. 다른 PC에서 서버를 돌리면 "192.168.0.10:8080" 처럼 적는다.
+# SAVEDOG_SERVER에는 localhost:8080, http://192.168.0.10:8080 또는 https://도메인 을 지정할 수 있다.
+SERVER = os.environ.get("SAVEDOG_SERVER", "localhost:8080").strip().rstrip("/")
+if SERVER.startswith("https://"):
+    API_BASE_URL = SERVER
+    WEBSOCKET_URL = "wss://" + SERVER[len("https://"):]
+elif SERVER.startswith("http://"):
+    API_BASE_URL = SERVER
+    WEBSOCKET_URL = "ws://" + SERVER[len("http://"):]
+else:
+    API_BASE_URL = "http://" + SERVER
+    WEBSOCKET_URL = "ws://" + SERVER
+
 DEVICE_TOKEN = os.environ.get("DEVICE_API_TOKEN", "")  # 서버에 DEVICE_API_TOKEN을 설정했으면 같은 값. 안 했으면 빈 문자열
 ROBODOG_PORT = None             # 로보독 동글 포트. None이면 자동으로 찾고, 못 찾으면 "COM3" 처럼 직접 적는다.
 
 DEFAULT_SPEED = 50              # 명령에 속도가 없을 때 쓰는 속도 (0~100)
 LEG_BEND = 60                   # 시작할 때 맞추는 다리 굽힘 (40~75가 안정적). None이면 건드리지 않는다.
 TILT_INTERVAL_SECONDS = 1.0     # 기울기를 보내는 간격
+CAMERA_ENABLED = os.environ.get("CAMERA_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+CAMERA_SOURCE_VALUE = os.environ.get("CAMERA_SOURCE", "0").strip()  # USB 웹캠 번호 또는 OpenCV 호환 스트림 URL
+CAMERA_SOURCE = int(CAMERA_SOURCE_VALUE) if CAMERA_SOURCE_VALUE.lstrip("-").isdigit() else CAMERA_SOURCE_VALUE
+CAMERA_INTERVAL_SECONDS = max(0.2, float(os.environ.get("CAMERA_INTERVAL_SECONDS", "1.0")))
+CAMERA_WIDTH = int(os.environ.get("CAMERA_WIDTH", "640"))
+CAMERA_HEIGHT = int(os.environ.get("CAMERA_HEIGHT", "480"))
+CAMERA_JPEG_QUALITY = max(30, min(95, int(os.environ.get("CAMERA_JPEG_QUALITY", "80"))))
+MAX_FRAME_BYTES = 2 * 1024 * 1024
 GESTURE_SECONDS = 2.0           # 앉기·일어서기 같은 동작이 끝나기를 기다리는 시간 (최소 2초)
 RECONNECT_SECONDS = 5.0         # 서버와 끊겼을 때 다시 접속하기까지 기다리는 시간
 
@@ -217,7 +238,7 @@ class TiltSender(threading.Thread):
         if DEVICE_TOKEN:
             headers["X-Device-Token"] = DEVICE_TOKEN
         request = urllib.request.Request(
-            "http://{}/api/robot/telemetry".format(SERVER), data=body, headers=headers, method="POST"
+            API_BASE_URL + "/api/robot/telemetry", data=body, headers=headers, method="POST"
         )
         try:
             with urllib.request.urlopen(request, timeout=3) as response:
@@ -232,6 +253,98 @@ class TiltSender(threading.Thread):
         if problem == self.problem:
             return
         log("기울기를 다시 정상으로 보내고 있습니다." if problem is None else problem)
+        self.problem = problem
+
+
+class CameraSender(threading.Thread):
+    """웹캠에서 JPEG를 캡처해 서버에 주기적으로 올린다."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.problem = None
+
+    def run(self):
+        try:
+            import cv2
+        except Exception as error:
+            log("카메라 업로드를 시작할 수 없습니다 (opencv-python 설치 필요: {}).".format(describe(error)))
+            return
+
+        camera = None
+        try:
+            while not stopping.is_set():
+                started_at = time.monotonic()
+                problem = None
+                try:
+                    if camera is None or not camera.isOpened():
+                        if camera is not None:
+                            camera.release()
+                        camera = cv2.VideoCapture(CAMERA_SOURCE)
+                        camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+                        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+                        if not camera.isOpened():
+                            camera.release()
+                            camera = None
+                            problem = "카메라를 열지 못했습니다 (CAMERA_SOURCE={} 확인).".format(CAMERA_SOURCE)
+
+                    if camera is not None:
+                        captured, frame = camera.read()
+                        if not captured or frame is None:
+                            camera.release()
+                            camera = None
+                            problem = "카메라 프레임을 읽지 못했습니다. 카메라 연결을 확인하세요."
+                        else:
+                            problem = self._send_frame(cv2, frame)
+                except Exception as error:
+                    problem = "카메라 전송 오류: {}".format(describe(error))
+
+                self._report(problem)
+                remaining = CAMERA_INTERVAL_SECONDS - (time.monotonic() - started_at)
+                if stopping.wait(max(0.0, remaining)):
+                    break
+        finally:
+            if camera is not None:
+                camera.release()
+
+    def _send_frame(self, cv2, frame):
+        jpeg = None
+        qualities = dict.fromkeys((CAMERA_JPEG_QUALITY, 65, 50, 35))
+        for quality in qualities:
+            encoded, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            if not encoded:
+                return "카메라 프레임을 JPEG로 변환하지 못했습니다."
+            jpeg = buffer.tobytes()
+            if len(jpeg) <= MAX_FRAME_BYTES:
+                break
+        if jpeg is None or len(jpeg) > MAX_FRAME_BYTES:
+            return "JPEG 프레임이 서버 제한(2MB)을 넘습니다. CAMERA_WIDTH/HEIGHT를 낮추세요."
+
+        headers = {"Content-Type": "image/jpeg"}
+        if DEVICE_TOKEN:
+            headers["X-Device-Token"] = DEVICE_TOKEN
+        request = urllib.request.Request(
+            API_BASE_URL + "/api/robot/frames", data=jpeg, headers=headers, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                if not 200 <= response.status < 300:
+                    return "서버가 카메라 사진을 받지 않았습니다 (HTTP {}).".format(response.status)
+            return None
+        except urllib.error.HTTPError as error:
+            hint = " 장치 토큰(DEVICE_API_TOKEN)을 확인하세요." if error.code == 401 else ""
+            return "서버가 카메라 사진을 받지 않았습니다 ({} {}).{}".format(
+                error.code, server_message(error), hint
+            ).strip()
+        except OSError as error:
+            return "서버에 카메라 사진을 보내지 못했습니다 ({}).".format(error)
+
+    def _report(self, problem):
+        if problem == self.problem:
+            return
+        if problem is None:
+            log("카메라 프레임 전송 정상 ({}초 간격).".format(CAMERA_INTERVAL_SECONDS))
+        else:
+            log(problem)
         self.problem = problem
 
 
@@ -265,7 +378,7 @@ class ServerLink:
 
     def run(self):
         self.worker.start()
-        url = "ws://{}/ws/robot".format(SERVER)
+        url = WEBSOCKET_URL + "/ws/robot"
         headers = {"X-Device-Token": DEVICE_TOKEN} if DEVICE_TOKEN else None
         while not stopping.is_set():
             try:
@@ -320,16 +433,23 @@ def main():
         return
     log("로보독에 연결했습니다.")
     robot = Robot(dog)
+    camera_sender = None
     try:
         if LEG_BEND is not None:
             dog.leg_bend(ALL_LEG, LEG_BEND)
         TiltSender(robot).start()
+        if CAMERA_ENABLED:
+            camera_sender = CameraSender()
+            camera_sender.start()
+            log("카메라 업로드를 시작합니다 (소스 {}, {}초 간격).".format(CAMERA_SOURCE, CAMERA_INTERVAL_SECONDS))
         ServerLink(robot).run()
     except KeyboardInterrupt:
         log("종료합니다.")
     finally:
         stopping.set()
         try:
+            if camera_sender is not None:
+                camera_sender.join(timeout=2)
             robot.stop_moving()
         finally:
             dog.Close()
