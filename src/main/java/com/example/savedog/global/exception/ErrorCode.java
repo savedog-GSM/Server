@@ -20,6 +20,8 @@ public enum ErrorCode {
     LOCATION_UNAVAILABLE(HttpStatus.CONFLICT, "최근에 받은 스마트폰 위치가 없습니다."),
     REPORT_ALREADY_PROCESSED(HttpStatus.CONFLICT, "이미 처리된 신고입니다."),
     REPORT_SUBMIT_FAILED(HttpStatus.BAD_GATEWAY, "민원 창구 제출에 실패했습니다."),
+    KAKAO_API_KEY_MISSING(HttpStatus.SERVICE_UNAVAILABLE, "카카오 REST API 키가 설정되지 않았습니다."),
+    KAKAO_PLACE_SEARCH_FAILED(HttpStatus.BAD_GATEWAY, "카카오 장소 검색에 실패했습니다."),
     IMAGE_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "이미지 저장소를 사용할 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 
