@@ -10,8 +10,6 @@ services:
       - .env
     volumes:
       - ./models:/app/models:ro
-    networks:
-      - app_network
     depends_on:
       db:
         condition: service_healthy
@@ -28,8 +26,6 @@ services:
     container_name: db
     ports:
       - "3306:3306"
-    networks:
-      - app_network
     environment:
       MYSQL_ROOT_PASSWORD: ${RDB_PASSWORD}
       MYSQL_DATABASE: ${RDB_SCHEMA}
@@ -49,8 +45,6 @@ services:
   nginx:
     image: nginx:1.31.7-alpine-slim
     container_name: nginx
-    networks:
-      - app_network
     ports:
      - "80:80"
     depends_on:
@@ -68,10 +62,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-
 networks:
-  app-network:
-    driver: bridge
+  default:
     driver_opts:
       com.docker.network.driver.mtu: 1400
 
