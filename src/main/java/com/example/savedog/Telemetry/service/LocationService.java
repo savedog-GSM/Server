@@ -17,7 +17,9 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 @RequiredArgsConstructor
 public class LocationService {
-    private static final Duration MAX_AGE = Duration.ofSeconds(5);
+    // 스마트폰 브라우저는 제자리에 있으면 위치를 몇 초~수십 초에 한 번만 알려 준다. (움직이면 자주 알려 준다)
+    // 5초로 두면 로보독이 잠깐 멈춰 있는 동안의 센서 값에 위치가 빠지므로 넉넉히 둔다.
+    private static final Duration MAX_AGE = Duration.ofSeconds(30);
     private static final double MAX_ACCURACY_METERS = 30;
 
     private final Clock clock;
@@ -38,7 +40,7 @@ public class LocationService {
         ));
     }
 
-    // 센서 값에 붙여도 되는 위치만 돌려준다: 받은 지 5초 이내이고 오차 반경이 30m 이하
+    // 센서 값에 붙여도 되는 위치만 돌려준다: 받은 지 30초 이내이고 오차 반경이 30m 이하
     public Optional<RobotLocation> findRecent() {
         return findRecent(MAX_AGE);
     }

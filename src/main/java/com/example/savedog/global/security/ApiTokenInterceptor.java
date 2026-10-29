@@ -27,6 +27,9 @@ public class ApiTokenInterceptor implements HandlerInterceptor {
         if (!(handler instanceof HandlerMethod method)) {
             return true;
         }
+        if (method.hasMethodAnnotation(PublicEndpoint.class)) {
+            return true;
+        }
         boolean allowed = method.hasMethodAnnotation(DeviceEndpoint.class)
                 ? apiTokens.matchesDevice(request.getHeader(ApiTokens.DEVICE_HEADER))
                 : apiTokens.matchesOperator(request.getHeader(HttpHeaders.AUTHORIZATION));

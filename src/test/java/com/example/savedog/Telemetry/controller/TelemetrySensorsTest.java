@@ -104,6 +104,17 @@ class TelemetrySensorsTest {
         assertTrue(!body.has("speed"), telemetry.body());
     }
 
+    @Test
+    @DisplayName("스마트폰 위치는 토큰 없이도 받고, 틀린 토큰이 붙어 있어도 받는다. 값 검사는 그대로 한다")
+    void locationNeedsNoToken() throws Exception {
+        String body = "{\"latitude\":37.5665,\"longitude\":126.978,\"accuracy\":5}";
+        assertEquals(204, post("/api/robot/location", body, null).statusCode());
+        assertEquals(204, post("/api/robot/location", body, "wrong-token-wrong-token").statusCode());
+        assertEquals(400, post("/api/robot/location", "{\"latitude\":91,\"longitude\":126.978}", null).statusCode());
+        // 다른 기기용 주소는 여전히 토큰이 필요하다.
+        assertEquals(401, post("/api/robot/telemetry", "{\"sensor\":{\"distance\":100}}", null).statusCode());
+    }
+
     private void assertBadRequest(String body, String field) throws Exception {
         HttpResponse<String> response = send(body);
         assertEquals(400, response.statusCode(), response.body());

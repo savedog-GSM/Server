@@ -25,11 +25,11 @@ class LocationServiceTest {
     }
 
     @Test
-    @DisplayName("받은 지 5초가 넘은 위치는 붙이지 않는다")
+    @DisplayName("받은 지 30초가 넘은 위치는 붙이지 않는다 (제자리에서 위치가 뜸하게 와도 30초까지는 붙인다)")
     void staleLocationIsIgnored() {
         service.store(new LocationRequest(37.5665, 126.978, 8.0));
 
-        clock.advanceSeconds(5);
+        clock.advanceSeconds(30);
         assertTrue(service.findRecent().isPresent());
 
         clock.advanceSeconds(1);

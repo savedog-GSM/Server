@@ -7,6 +7,7 @@ import com.example.savedog.Telemetry.service.CameraFrameService;
 import com.example.savedog.Telemetry.service.LocationService;
 import com.example.savedog.Telemetry.service.TelemetryService;
 import com.example.savedog.global.security.DeviceEndpoint;
+import com.example.savedog.global.security.PublicEndpoint;
 import com.example.savedog.global.storage.ImageUrlResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -46,7 +47,8 @@ public class TelemetryController {
         return telemetryService.findTrack(from, to);
     }
 
-    @DeviceEndpoint
+    // 스마트폰 위치 전송 화면에서 토큰 없이 보낼 수 있게 열어 둔다.
+    @PublicEndpoint
     @PostMapping("/location")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void receiveLocation(@RequestBody LocationRequest request) {
