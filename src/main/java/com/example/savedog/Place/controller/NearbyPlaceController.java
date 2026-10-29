@@ -5,6 +5,7 @@ import com.example.savedog.Place.DTO.NearbyPlaceResponse;
 import com.example.savedog.Place.DTO.PlaceRouteResponse;
 import com.example.savedog.Place.service.NearbyPlaceService;
 import com.example.savedog.Place.service.PlaceRouteService;
+import com.example.savedog.global.security.PublicEndpoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +19,7 @@ public class NearbyPlaceController {
     private final NearbyPlaceService nearbyPlaceService;
     private final PlaceRouteService placeRouteService;
 
+    @PublicEndpoint
     @GetMapping("/nearby")
     public NearbyPlaceResponse nearby(
             @RequestParam String type,
@@ -30,6 +32,7 @@ public class NearbyPlaceController {
         return nearbyPlaceService.search(type, latitude, longitude, radius, page, size);
     }
 
+    @PublicEndpoint
     // 가까운 화장실·편의점까지 자동 길찾기. 출발지(latitude·longitude)를 빼면 스마트폰의 최근 위치에서 출발하고,
     // mode를 빼면 안전 우선(SAFEST)이다.
     @GetMapping("/nearest/route")
