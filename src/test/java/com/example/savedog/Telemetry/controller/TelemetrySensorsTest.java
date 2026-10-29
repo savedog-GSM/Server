@@ -90,6 +90,20 @@ class TelemetrySensorsTest {
         assertEquals(400, post("/api/arduino/sensors", "not json", DEVICE_TOKEN).statusCode());
     }
 
+    @Test
+    @DisplayName("속도는 쓰지 않는다: 스마트폰이 speed를 보내도 받고, 응답에는 speed가 없다")
+    void speedIsIgnored() throws Exception {
+        HttpResponse<String> location = post("/api/robot/location",
+                "{\"latitude\":37.5665,\"longitude\":126.978,\"accuracy\":5,\"speed\":-3}", DEVICE_TOKEN);
+        assertEquals(204, location.statusCode(), location.body());
+
+        HttpResponse<String> telemetry = send("{\"sensor\":{\"distance\":150}}");
+        assertEquals(201, telemetry.statusCode(), telemetry.body());
+        JsonNode body = json.readTree(telemetry.body());
+        assertEquals(37.5665, body.get("latitude").asDouble());
+        assertTrue(!body.has("speed"), telemetry.body());
+    }
+
     private void assertBadRequest(String body, String field) throws Exception {
         HttpResponse<String> response = send(body);
         assertEquals(400, response.statusCode(), response.body());

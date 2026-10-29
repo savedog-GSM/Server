@@ -370,7 +370,7 @@ class ReportServiceTest {
     }
 
     private Telemetry telemetry(double distance) {
-        return new Telemetry(new RobotLocation(LATITUDE, LONGITUDE, 5.0, 0.0, LocalDateTime.now(clock)), distance);
+        return new Telemetry(new RobotLocation(LATITUDE, LONGITUDE, 5.0, LocalDateTime.now(clock)), distance);
     }
 
     private SafetyRecord record(double northMeters) {

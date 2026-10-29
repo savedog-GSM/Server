@@ -30,14 +30,10 @@ public class LocationService {
         if (request.accuracy() != null) {
             RequestValidator.nonNegative(request.accuracy(), "accuracy");
         }
-        if (request.speed() != null) {
-            RequestValidator.nonNegative(request.speed(), "speed");
-        }
         latest.set(new RobotLocation(
                 point.latitude(),
                 point.longitude(),
                 request.accuracy(),
-                request.speed(),
                 LocalDateTime.now(clock)
         ));
     }

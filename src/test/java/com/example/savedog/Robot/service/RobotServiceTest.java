@@ -180,14 +180,13 @@ class RobotServiceTest {
     @Test
     @DisplayName("센서 기록이 없어도 마지막으로 받은 GPS 좌표를 상태에 돌려준다")
     void statusShowsLocationWithoutTelemetry() {
-        locationService.store(new LocationRequest(35.14332, 126.80079, 5.0, 0.4));
+        locationService.store(new LocationRequest(35.14332, 126.80079, 5.0));
         when(telemetryRepository.findFirstByOrderByRecordedAtDesc()).thenReturn(Optional.empty());
 
         RobotStatusResponse status = service.getStatus();
 
         assertEquals(35.14332, status.latitude());
         assertEquals(126.80079, status.longitude());
-        assertEquals(0.4, status.speed());
         assertEquals(locationService.lastReceivedAt().orElseThrow(), status.lastLocationAt());
         assertNull(status.lastSeenAt());
         assertNull(status.sensor());

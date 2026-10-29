@@ -163,7 +163,7 @@ class HazardReportTriggerTest {
 
     private void feed(HazardReportTrigger target, double northMeters, SafetyAssessment assessment, boolean located) {
         double latitude = LATITUDE + northMeters / METERS_PER_LATITUDE_DEGREE;
-        RobotLocation location = located ? new RobotLocation(latitude, LONGITUDE, 5.0, 0.0, clock) : null;
+        RobotLocation location = located ? new RobotLocation(latitude, LONGITUDE, 5.0, clock) : null;
         Telemetry telemetry = new Telemetry(location, 15);
         ReflectionTestUtils.setField(telemetry, "recordedAt", clock);
         SafetyRecord record = located

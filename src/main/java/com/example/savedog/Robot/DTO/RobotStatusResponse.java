@@ -12,7 +12,6 @@ public record RobotStatusResponse(
         LocalDateTime lastLocationAt,
         Double latitude,
         Double longitude,
-        Double speed,
         SensorValues sensor,
         RiskResponse risk
 ) {

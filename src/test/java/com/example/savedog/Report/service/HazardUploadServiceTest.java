@@ -208,7 +208,7 @@ class HazardUploadServiceTest {
     }
 
     private void phoneAt(double latitude, double longitude) {
-        locationService.store(new LocationRequest(latitude, longitude, 5.0, 0.0));
+        locationService.store(new LocationRequest(latitude, longitude, 5.0));
     }
 
     private HazardUploadRequest request(String hazardType, byte[] image) {

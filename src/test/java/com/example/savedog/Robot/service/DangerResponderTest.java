@@ -135,7 +135,7 @@ class DangerResponderTest {
 
     private TelemetryResponse snapshot(double distance, RiskResponse risk) {
         return new TelemetryResponse(
-                1L, 37.5665, 126.9780, 0.4, new SensorValues(distance), risk,
+                1L, 37.5665, 126.9780, new SensorValues(distance), risk,
                 LocalDateTime.of(2026, 10, 13, 14, 0)
         );
     }

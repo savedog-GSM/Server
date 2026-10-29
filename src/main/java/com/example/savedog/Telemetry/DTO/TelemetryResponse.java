@@ -5,12 +5,11 @@ import com.example.savedog.Telemetry.domain.Telemetry;
 
 import java.time.LocalDateTime;
 
-// 센서·위험도 스냅샷. 위치·속도는 최근 위치가 없으면 null
+// 센서·위험도 스냅샷. 위치는 최근 위치가 없으면 null
 public record TelemetryResponse(
         Long id,
         Double latitude,
         Double longitude,
-        Double speed,
         SensorValues sensor,
         RiskResponse risk,
         LocalDateTime recordedAt
@@ -20,7 +19,6 @@ public record TelemetryResponse(
                 telemetry.getId(),
                 telemetry.getLatitude(),
                 telemetry.getLongitude(),
-                telemetry.getSpeed(),
                 new SensorValues(telemetry.getDistance(), telemetry.getTemperature(), telemetry.getHumidity()),
                 riskOf(telemetry),
                 telemetry.getRecordedAt()

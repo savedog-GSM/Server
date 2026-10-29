@@ -70,7 +70,6 @@ public class RobotService {
                         lastLocationAt,
                         location == null ? latest.latitude() : Double.valueOf(location.latitude()),
                         location == null ? latest.longitude() : Double.valueOf(location.longitude()),
-                        location != null && location.speed() != null ? location.speed() : latest.speed(),
                         latest.sensor(),
                         latest.risk()
                 ))
@@ -80,7 +79,6 @@ public class RobotService {
                         lastLocationAt,
                         location == null ? null : location.latitude(),
                         location == null ? null : location.longitude(),
-                        location == null ? null : location.speed(),
                         null,
                         null
                 ));

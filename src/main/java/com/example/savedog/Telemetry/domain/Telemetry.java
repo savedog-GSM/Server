@@ -26,14 +26,12 @@ public class Telemetry {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 위치·속도는 스마트폰이 보낸 값이라 최근 위치가 없으면 null
+    // 위치는 스마트폰이 보낸 값이라 최근 위치가 없으면 null
     private Double latitude;
 
     private Double longitude;
 
     private Double locationAccuracy;
-
-    private Double speed;
 
     // 아두이노가 잰 전방 거리(cm). 새 기록에는 항상 있다.
     // 거리 없이 기울기만 받던 예전 버전의 기록을 읽을 수 있게 null을 허용하는 타입으로 둔다.
@@ -71,7 +69,6 @@ public class Telemetry {
             this.latitude = location.latitude();
             this.longitude = location.longitude();
             this.locationAccuracy = location.accuracy();
-            this.speed = location.speed();
         }
         this.distance = distance;
         this.temperature = temperature;
