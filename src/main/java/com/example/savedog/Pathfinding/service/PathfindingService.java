@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -39,9 +40,14 @@ public class PathfindingService {
         GeoPoint end = toPoint(request.end(), "end");
         PathMode mode = request.mode() == null ? PathMode.SAFEST : request.mode();
 
+        return plan(start, end, mode).orElseThrow(() -> new BusinessException(ErrorCode.PATH_NOT_FOUND));
+    }
+
+    // 갈 수 있는 경로가 없으면 Optional.empty(). 여러 도착 후보를 차례로 시험할 때 쓴다.
+    @Transactional(readOnly = true)
+    public Optional<PathSearchResponse> plan(GeoPoint start, GeoPoint end, PathMode mode) {
         return pathPlanner.plan(start, end, mode, recordsAround(start, end))
-                .map(path -> PathSearchResponse.of(mode, path))
-                .orElseThrow(() -> new BusinessException(ErrorCode.PATH_NOT_FOUND));
+                .map(path -> PathSearchResponse.of(mode, path));
     }
 
     /**

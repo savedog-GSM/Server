@@ -7,6 +7,7 @@ import com.example.savedog.global.validation.RequestValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -31,17 +32,9 @@ public class NearbyPlaceService {
         );
         int requestedPage = RequestValidator.inRange(page == null ? DEFAULT_PAGE : page, 1, MAX_PAGE, "page");
         int requestedSize = RequestValidator.inRange(size == null ? DEFAULT_SIZE : size, 1, MAX_SIZE, "size");
-        String normalizedType = RequestValidator.required(type, "type").trim().toLowerCase(Locale.ROOT);
+        String normalizedType = normalizeType(type);
 
-        KakaoPlaceSearchResult result = switch (normalizedType) {
-            case "convenience" -> kakaoPlaceSearchClient.searchCategory(
-                    "CS2", center.longitude(), center.latitude(), radius, requestedPage, requestedSize
-            );
-            case "toilet" -> kakaoPlaceSearchClient.searchKeyword(
-                    "화장실", center.longitude(), center.latitude(), radius, requestedPage, requestedSize
-            );
-            default -> throw RequestValidator.invalid("type은 convenience 또는 toilet이어야 합니다.");
-        };
+        KakaoPlaceSearchResult result = query(normalizedType, center, radius, requestedPage, requestedSize);
 
         return new NearbyPlaceResponse(
                 normalizedType,
@@ -54,7 +47,38 @@ public class NearbyPlaceService {
         );
     }
 
-    private PlaceResponse toResponse(KakaoPlace place) {
+    // 경로 안내용: 가까운 순서로 size곳까지. type은 normalizeType을 거친 값
+    List<KakaoPlace> findNearest(String normalizedType, GeoPoint center, int radiusMeters, int size) {
+        return query(normalizedType, center, radiusMeters, DEFAULT_PAGE, size).places();
+    }
+
+    static String normalizeType(String type) {
+        String normalized = RequestValidator.required(type, "type").trim().toLowerCase(Locale.ROOT);
+        if (!normalized.equals("convenience") && !normalized.equals("toilet")) {
+            throw RequestValidator.invalid("type은 convenience 또는 toilet이어야 합니다.");
+        }
+        return normalized;
+    }
+
+    static int radiusOrDefault(Integer radiusMeters) {
+        return RequestValidator.inRange(
+                radiusMeters == null ? DEFAULT_RADIUS_METERS : radiusMeters, 0, MAX_RADIUS_METERS, "radius"
+        );
+    }
+
+    private KakaoPlaceSearchResult query(String normalizedType, GeoPoint center, int radius, int page, int size) {
+        return switch (normalizedType) {
+            case "convenience" -> kakaoPlaceSearchClient.searchCategory(
+                    "CS2", center.longitude(), center.latitude(), radius, page, size
+            );
+            case "toilet" -> kakaoPlaceSearchClient.searchKeyword(
+                    "화장실", center.longitude(), center.latitude(), radius, page, size
+            );
+            default -> throw RequestValidator.invalid("type은 convenience 또는 toilet이어야 합니다.");
+        };
+    }
+
+    PlaceResponse toResponse(KakaoPlace place) {
         return new PlaceResponse(
                 place.id(), place.name(), place.category(), place.categoryGroupCode(), place.categoryGroupName(),
                 place.phone(), place.address(), place.roadAddress(), place.latitude(), place.longitude(),

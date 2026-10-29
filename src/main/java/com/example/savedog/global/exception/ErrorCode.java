@@ -15,6 +15,7 @@ public enum ErrorCode {
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 Content-Type입니다."),
     FRAME_NOT_FOUND(HttpStatus.NOT_FOUND, "수신된 카메라 프레임이 없습니다."),
     PATH_NOT_FOUND(HttpStatus.NOT_FOUND, "경로를 찾지 못했습니다."),
+    PLACE_NOT_FOUND(HttpStatus.NOT_FOUND, "근처에서 장소를 찾지 못했습니다."),
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "신고를 찾을 수 없습니다."),
     ROBOT_NOT_CONNECTED(HttpStatus.CONFLICT, "로보독이 연결되어 있지 않습니다."),
     LOCATION_UNAVAILABLE(HttpStatus.CONFLICT, "최근에 받은 스마트폰 위치가 없습니다."),
