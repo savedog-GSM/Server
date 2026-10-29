@@ -21,7 +21,7 @@ public record TelemetryResponse(
                 telemetry.getLatitude(),
                 telemetry.getLongitude(),
                 telemetry.getSpeed(),
-                new SensorValues(telemetry.getDistance()),
+                new SensorValues(telemetry.getDistance(), telemetry.getTemperature(), telemetry.getHumidity()),
                 riskOf(telemetry),
                 telemetry.getRecordedAt()
         );

@@ -1,30 +1,38 @@
-// 지켜멍 거리 센서 (ESP32 + 초음파 센서 HC-SR04)
-// 1초마다 전방 거리를 재서 서버의 센서 값 전송 API(POST /api/robot/telemetry)로 보낸다.
+// 지켜멍 센서 (ESP32 + 초음파 센서 HC-SR04 + 온습도 센서 DHT11/DHT22)
+// 1초마다 전방 거리와 최근 온습도를 서버의 아두이노 전용 API(POST /api/arduino/sensors)로 보낸다.
 //
 // 배선
-//   HC-SR04 VCC  → ESP32 5V(VIN)
-//   HC-SR04 GND  → ESP32 GND
-//   HC-SR04 TRIG → GPIO 5
-//   HC-SR04 ECHO → GPIO 18
+//   HC-SR04 VCC  → ESP32 5V(VIN)       DHT VCC  → ESP32 3.3V
+//   HC-SR04 GND  → ESP32 GND           DHT GND  → ESP32 GND
+//   HC-SR04 TRIG → P23                 DHT DATA → P34
+//   HC-SR04 ECHO → P22
+//   ※ P34(GPIO 34)는 ESP32에서 "입력 전용" 핀이다. DHT 센서는 보드가 신호선을 잠깐 LOW로 끌어내려야
+//     측정을 시작하는데 P34는 출력을 못 해서 온습도를 읽지 못한다. P4·P25·P26·P27·P32·P33 중 하나로 옮기고
+//     아래 DHT_PIN을 그 번호로 바꾼다. (온습도를 못 읽어도 거리는 계속 보낸다)
 //   ※ ECHO는 5V 신호라 그대로 꽂으면 ESP32 핀이 망가질 수 있다.
 //     저항 두 개(예: 1kΩ, 2kΩ)로 나눠 3.3V로 낮춰서 연결하거나, 3.3V용 HC-SR04P를 쓴다.
+//   ※ DHT 센서만 있는 부품(다리 4개)이면 DATA와 VCC 사이에 10kΩ 저항을 단다. 모듈형(다리 3개)은 이미 달려 있다.
 //
 // 준비
-//   1) Arduino IDE 보드 매니저에서 "esp32"를 설치하고 ESP32 Dev Module을 고른다. 추가 라이브러리는 필요 없다.
-//   2) 이 폴더의 secrets.example.h를 secrets.h로 복사하고 Wi-Fi·토큰 값을 채운다. (secrets.h는 git에 올라가지 않는다)
-//   3) 업로드 후 시리얼 모니터(115200)에서 "거리 ...cm 보냄"이 1초마다 찍히면 정상이다.
+//   1) 보드 매니저에서 "esp32"를 설치하고 ESP32 Dev Module을 고른다.
+//   2) 라이브러리 매니저에서 "DHT sensor library"(Adafruit)를 설치한다. 같이 설치하라는 Adafruit Unified Sensor도 설치한다.
+//   3) 이 폴더의 secrets.example.h를 secrets.h로 복사하고 Wi-Fi·토큰 값을 채운다. (secrets.h는 git에 올라가지 않는다)
+//   4) 시리얼 모니터(9600)에서 "거리 ...cm, 온도 ...°C, 습도 ...% 보냄"이 1초마다 찍히면 정상이다.
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <DHT.h>
 #include "secrets.h"  // WIFI_SSID, WIFI_PASSWORD, DEVICE_TOKEN
 
 // ───────── 설정 ─────────
-// 학교 서버(HTTPS). 인증서 문제로 안 되면 "http://service.gsmsv.site:22107/api/robot/telemetry"를 쓴다.
-const char* SERVER_URL = "https://savedog.https.gsmsv.site/api/robot/telemetry";
+// 학교 서버(HTTPS). 인증서 문제로 안 되면 "http://service.gsmsv.site:22107/api/arduino/sensors"를 쓴다.
+const char* SERVER_URL = "https://savedog.https.gsmsv.site/api/arduino/sensors";
 
-const int TRIG_PIN = 5;
-const int ECHO_PIN = 18;
+const int TRIG_PIN = 23;
+const int ECHO_PIN = 22;
+const int DHT_PIN = 34;  // 입력 전용 핀이라 온습도를 못 읽는다. 위 배선 설명을 보고 옮긴다.
+#define DHT_TYPE DHT11  // 파란색 센서는 DHT11, 흰색 센서는 DHT22로 바꾼다.
 const unsigned long SEND_INTERVAL_MS = 1000;  // 거리를 보내는 간격
 // ────────────────────────
 
@@ -34,21 +42,38 @@ const float CM_PER_MICROSECOND = 0.0343;       // 소리가 1마이크로초에 
 const int SAMPLES = 3;                         // 튀는 값을 줄이려고 세 번 재서 가운데 값을 쓴다.
 const unsigned long RECONNECT_INTERVAL_MS = 5000;
 const int HTTP_TIMEOUT_MS = 3000;
+// DHT 센서는 2초에 한 번보다 자주 읽으면 값이 안 나온다. 그 사이에는 마지막 값을 보낸다.
+const unsigned long CLIMATE_INTERVAL_MS = 2000;
+// 이보다 오래 못 읽었으면 센서가 빠진 것으로 보고 온습도를 빼고 보낸다.
+const unsigned long CLIMATE_STALE_MS = 10000;
+// 서버가 받는 범위. 벗어난 값은 센서 오류로 보고 보내지 않는다. (보내면 거리까지 같이 거절된다)
+const float MIN_TEMPERATURE = -40.0;
+const float MAX_TEMPERATURE = 85.0;
 
 // HTTPS 연결을 매번 새로 맺으면 1초 안에 못 보낼 수 있어서 연결을 계속 쓴다.
 WiFiClientSecure secureClient;
 WiFiClient plainClient;
 HTTPClient http;
+DHT dht(DHT_PIN, DHT_TYPE);
 bool useHttps = false;
 
 unsigned long lastSentAt = 0;
 unsigned long lastReconnectAt = 0;
+unsigned long lastClimateReadAt = 0;
+unsigned long lastClimateOkAt = 0;
+bool hasClimate = false;
+float temperature = 0;
+float humidity = 0;
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   digitalWrite(TRIG_PIN, LOW);
+  dht.begin();
+  if (DHT_PIN >= 34 && DHT_PIN <= 39) {
+    Serial.println("주의: DHT_PIN이 입력 전용 핀(34~39)이라 온습도를 읽을 수 없습니다. P4·P25·P26·P27·P32·P33 중 하나로 옮기세요.");
+  }
 
   useHttps = strncmp(SERVER_URL, "https://", 8) == 0;
   // 프로토타입이라 서버 인증서를 확인하지 않는다. (암호화는 된다)
@@ -65,6 +90,10 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
+  if (now - lastClimateReadAt >= CLIMATE_INTERVAL_MS) {
+    lastClimateReadAt = now;
+    readClimate(now);
+  }
   if (now - lastSentAt >= SEND_INTERVAL_MS) {
     lastSentAt = now;
     tick(now);
@@ -82,7 +111,27 @@ void tick(unsigned long now) {
     }
     return;
   }
-  sendDistance(measureDistance());
+  bool climateFresh = hasClimate && now - lastClimateOkAt <= CLIMATE_STALE_MS;
+  sendReadings(measureDistance(), climateFresh);
+}
+
+// 온습도를 읽어 둔다. 실패하면(배선 불량, 너무 자주 읽음 등) 이전 값을 그대로 둔다.
+void readClimate(unsigned long now) {
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  if (isnan(t) || isnan(h)) {
+    Serial.printf("온습도 센서를 읽지 못했습니다. DATA 핀(P%d)과 DHT_TYPE을 확인하세요.
+", DHT_PIN);
+    return;
+  }
+  if (t < MIN_TEMPERATURE || t > MAX_TEMPERATURE || h < 0 || h > 100) {
+    Serial.printf("온습도 값이 이상합니다.: %.1f°C, %.1f%%\n", t, h);
+    return;
+  }
+  temperature = t;
+  humidity = h;
+  hasClimate = true;
+  lastClimateOkAt = now;
 }
 
 // 한 번 잰 전방 거리(cm). 반사가 돌아오지 않으면 최대 거리로 본다.
@@ -121,7 +170,7 @@ float measureDistance() {
   return values[SAMPLES / 2];
 }
 
-void sendDistance(float distance) {
+void sendReadings(float distance, bool withClimate) {
   bool started = useHttps ? http.begin(secureClient, SERVER_URL) : http.begin(plainClient, SERVER_URL);
   if (!started) {
     Serial.println("서버 주소(SERVER_URL)를 확인하세요.");
@@ -132,12 +181,22 @@ void sendDistance(float distance) {
     http.addHeader("X-Device-Token", DEVICE_TOKEN);
   }
 
-  char body[48];
-  snprintf(body, sizeof(body), "{\"sensor\":{\"distance\":%.1f}}", distance);
+  // 온습도를 못 읽고 있으면 빼고 거리만 보낸다. (서버는 온습도가 없어도 받는다)
+  char body[96];
+  if (withClimate) {
+    snprintf(body, sizeof(body), "{\"distance\":%.1f,\"temperature\":%.1f,\"humidity\":%.1f}",
+             distance, temperature, humidity);
+  } else {
+    snprintf(body, sizeof(body), "{\"distance\":%.1f}", distance);
+  }
   int status = http.POST(body);
 
   if (status == 201) {
-    Serial.printf("거리 %.1fcm 보냄\n", distance);
+    if (withClimate) {
+      Serial.printf("거리 %.1fcm, 온도 %.1f°C, 습도 %.1f%% 보냄\n", distance, temperature, humidity);
+    } else {
+      Serial.printf("거리 %.1fcm 보냄 (온습도 없음)\n", distance);
+    }
   } else if (status > 0) {
     // 400(값 오류), 401(토큰 오류) 등. 서버가 이유를 JSON으로 알려 준다.
     Serial.printf("서버가 받지 않았습니다 (%d): %s\n", status, http.getString().c_str());

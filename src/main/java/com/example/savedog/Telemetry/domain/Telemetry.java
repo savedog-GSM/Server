@@ -39,6 +39,11 @@ public class Telemetry {
     // 거리 없이 기울기만 받던 예전 버전의 기록을 읽을 수 있게 null을 허용하는 타입으로 둔다.
     private Double distance;
 
+    // 아두이노 온습도 센서 값(°C, %). 센서가 없거나 못 읽었으면 null
+    private Double temperature;
+
+    private Double humidity;
+
     // 위험도 판단 결과. 위치가 없는 기록도 대시보드와 이동 기록에서 위험도를 볼 수 있게 여기에도 남긴다.
     @Enumerated(EnumType.STRING)
     private SafetyLevel riskLevel;
@@ -53,6 +58,15 @@ public class Telemetry {
             RobotLocation location,
             double distance
     ) {
+        this(location, distance, null, null);
+    }
+
+    public Telemetry(
+            RobotLocation location,
+            double distance,
+            Double temperature,
+            Double humidity
+    ) {
         if (location != null) {
             this.latitude = location.latitude();
             this.longitude = location.longitude();
@@ -60,6 +74,8 @@ public class Telemetry {
             this.speed = location.speed();
         }
         this.distance = distance;
+        this.temperature = temperature;
+        this.humidity = humidity;
         this.recordedAt = LocalDateTime.now();
     }
 

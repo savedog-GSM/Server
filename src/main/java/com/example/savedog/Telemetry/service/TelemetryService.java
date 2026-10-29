@@ -27,6 +27,9 @@ import java.util.List;
 @Service
 public class TelemetryService {
     private static final double MAX_DISTANCE_CM = 400;
+    // 흔한 온습도 센서(DHT11·DHT22)가 잴 수 있는 범위를 넉넉히 덮는다.
+    private static final double MIN_TEMPERATURE = -40;
+    private static final double MAX_TEMPERATURE = 85;
     // 기간을 주지 않았을 때 돌려주는 최근 기록 수
     private static final int DEFAULT_TRACK_SIZE = 1_000;
     // 기간을 넓게 잡아도 한 번에 이보다 많이는 주지 않는다. (1초 주기로 약 2시간 47분 분량)
@@ -63,13 +66,24 @@ public class TelemetryService {
     }
 
     public TelemetryResponse receive(TelemetryRequest request) {
-        double distance = validate(request);
+        RequestValidator.required(request, "요청 본문");
+        return record(validate(RequestValidator.required(request.sensor(), "sensor"), "sensor."));
+    }
+
+    // 아두이노 전용 주소(POST /api/arduino/sensors)로 받은 값. 항목이 sensor로 감싸여 있지 않다.
+    public TelemetryResponse receiveArduino(SensorValues values) {
+        RequestValidator.required(values, "요청 본문");
+        return record(validate(values, ""));
+    }
+
+    private TelemetryResponse record(SensorValues sensor) {
+        double distance = sensor.distance();
         RobotLocation location = locationService.findRecent().orElse(null);
 
         // 센서 값 저장과 위험도 판단은 한 트랜잭션으로 묶는다.
         Recorded recorded = transactionTemplate.execute(status -> {
             Telemetry telemetry = telemetryRepository.save(
-                    new Telemetry(location, distance)
+                    new Telemetry(location, distance, sensor.temperature(), sensor.humidity())
             );
             return new Recorded(telemetry, safetyService.assess(telemetry));
         });
@@ -104,11 +118,15 @@ public class TelemetryService {
                 .toList();
     }
 
-    // 아두이노가 보낸 전방 거리(cm)를 꺼낸다.
-    private double validate(TelemetryRequest request) {
-        RequestValidator.required(request, "요청 본문");
-        SensorValues sensor = RequestValidator.required(request.sensor(), "sensor");
-        return RequestValidator.inRange(sensor.distance(), 0, MAX_DISTANCE_CM, "sensor.distance");
+    // 전방 거리(cm)는 꼭 있어야 하고, 온습도는 보냈을 때만 범위를 확인한다.
+    // prefix는 오류 메시지에 쓰는 항목 이름 앞부분. (/api/robot/telemetry는 "sensor.", 아두이노 주소는 "")
+    private SensorValues validate(SensorValues sensor, String prefix) {
+        double distance = RequestValidator.inRange(sensor.distance(), 0, MAX_DISTANCE_CM, prefix + "distance");
+        Double temperature = sensor.temperature() == null ? null
+                : RequestValidator.inRange(sensor.temperature(), MIN_TEMPERATURE, MAX_TEMPERATURE, prefix + "temperature");
+        Double humidity = sensor.humidity() == null ? null
+                : RequestValidator.inRange(sensor.humidity(), 0, 100, prefix + "humidity");
+        return new SensorValues(distance, temperature, humidity);
     }
 
     private void runQuietly(String what, Runnable action) {
