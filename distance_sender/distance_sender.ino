@@ -120,8 +120,7 @@ void readClimate(unsigned long now) {
   float t = dht.readTemperature();
   float h = dht.readHumidity();
   if (isnan(t) || isnan(h)) {
-    Serial.printf("온습도 센서를 읽지 못했습니다. DATA 핀(P%d)과 DHT_TYPE을 확인하세요.
-", DHT_PIN);
+    Serial.printf("온습도 센서를 읽지 못했습니다. DATA 핀(P%d)과 DHT_TYPE을 확인하세요.\n", DHT_PIN);
     return;
   }
   if (t < MIN_TEMPERATURE || t > MAX_TEMPERATURE || h < 0 || h > 100) {
