@@ -11,6 +11,7 @@ import com.example.savedog.global.security.PublicEndpoint;
 import com.example.savedog.global.storage.ImageUrlResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -78,5 +79,15 @@ public class TelemetryController {
     @GetMapping("/frames/latest/url")
     public ImageUrlResponse getLatestFrameUrl() {
         return ImageUrlResponse.from(cameraFrameService.getLatestUrl());
+    }
+
+    // S3에 저장하지 못하는 동안 위 주소가 돌려주는 임시 주소. 토큰 대신 주소의 서명으로 확인한다.
+    @PublicEndpoint
+    @GetMapping("/frames/live")
+    public ResponseEntity<byte[]> getLiveFrame(@RequestParam long expires, @RequestParam String signature) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(CacheControl.noStore())
+                .body(cameraFrameService.getLiveFrame(expires, signature));
     }
 }

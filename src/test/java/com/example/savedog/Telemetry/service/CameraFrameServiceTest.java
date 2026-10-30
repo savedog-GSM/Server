@@ -125,6 +125,73 @@ class CameraFrameServiceTest {
     }
 
     @Test
+    @DisplayName("S3에 못 넣는 동안에는 서명한 임시 주소로 메모리의 최신 사진을 준다")
+    void liveFrameWhenStorageFails() {
+        when(vision.submit(JPEG)).thenReturn(true);
+        storage.failing = true;
+        service.store(JPEG);
+
+        URI url = service.getLatestUrl();
+
+        assertTrue(url.toString().startsWith("https://server.test/api/robot/frames/live?expires="), url.toString());
+        assertArrayEquals(JPEG, service.getLiveFrame(expiresOf(url), signatureOf(url)));
+    }
+
+    @Test
+    @DisplayName("서명이 틀리거나 다른 만료 시각이거나 주소가 만료되면 401")
+    void liveFrameNeedsValidSignature() {
+        when(vision.submit(JPEG)).thenReturn(true);
+        storage.failing = true;
+        service.store(JPEG);
+        URI url = service.getLatestUrl();
+        long expires = expiresOf(url);
+        String signature = signatureOf(url);
+
+        assertError(ErrorCode.UNAUTHORIZED, () -> service.getLiveFrame(expires, "wrong"));
+        assertError(ErrorCode.UNAUTHORIZED, () -> service.getLiveFrame(expires + 1, signature));
+
+        clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+        assertError(ErrorCode.UNAUTHORIZED, () -> service.getLiveFrame(expires, signature));
+    }
+
+    @Test
+    @DisplayName("사진이 10초 넘게 안 오면 옛 사진을 지금 모습처럼 보여 주지 않는다")
+    void staleLiveFrameIsNotShown() {
+        when(vision.submit(JPEG)).thenReturn(true);
+        storage.failing = true;
+        service.store(JPEG);
+        URI url = service.getLatestUrl();
+
+        clock.advanceSeconds(11);
+
+        assertError(ErrorCode.FRAME_NOT_FOUND, service::getLatestUrl);
+        assertError(ErrorCode.FRAME_NOT_FOUND, () -> service.getLiveFrame(expiresOf(url), signatureOf(url)));
+    }
+
+    @Test
+    @DisplayName("S3가 다시 되면 S3 주소로 돌아가고 메모리의 사진은 버린다")
+    void returnsToStorageWhenItRecovers() {
+        when(vision.submit(JPEG)).thenReturn(true);
+        storage.failing = true;
+        service.store(JPEG);
+        URI live = service.getLatestUrl();
+
+        storage.failing = false;
+        service.store(JPEG);
+
+        assertTrue(service.getLatestUrl().toString().startsWith("https://storage.test/"));
+        assertError(ErrorCode.FRAME_NOT_FOUND, () -> service.getLiveFrame(expiresOf(live), signatureOf(live)));
+    }
+
+    private static long expiresOf(URI url) {
+        return Long.parseLong(url.getQuery().split("&")[0].substring("expires=".length()));
+    }
+
+    private static String signatureOf(URI url) {
+        return url.getQuery().split("&")[1].substring("signature=".length());
+    }
+
+    @Test
     @DisplayName("JPEG가 아니거나 비어 있으면 물체 인식에도 넘기지 않는다")
     void invalidFrameIsNotAnalyzed() {
         assertError(ErrorCode.INVALID_REQUEST, () -> service.store(new byte[]{1, 2, 3}));

@@ -154,7 +154,8 @@ public class S3ImageStorage implements ImageStorage, AutoCloseable {
         try {
             return operation.get();
         } catch (SdkException | IllegalStateException e) {
-            log.warn("S3 {} 실패 (key={})", action, key, e);
+            // 사진은 1초마다 오므로 권한 오류가 나면 매번 쌓인다. 스택 없이 원인만 남긴다.
+            log.warn("S3 {} 실패 (key={}): {}", action, key, e.toString());
             throw new BusinessException(
                     ErrorCode.IMAGE_STORAGE_UNAVAILABLE,
                     "이미지 저장소(S3)에 접근하지 못했습니다. 버킷과 자격 증명 설정을 확인해 주세요.",
