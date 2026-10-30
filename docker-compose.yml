@@ -8,8 +8,11 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      LOCAL_IMAGE_DIR: /app/images
     volumes:
       - ./models:/app/models:ro
+      - image_data:/app/images
     depends_on:
       db:
         condition: service_healthy
@@ -69,3 +72,4 @@ networks:
 
 volumes:
   mysql_data:
+  image_data:

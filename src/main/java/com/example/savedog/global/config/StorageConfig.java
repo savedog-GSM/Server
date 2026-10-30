@@ -1,12 +1,16 @@
 package com.example.savedog.global.config;
 
 import com.example.savedog.global.storage.ImageStorage;
+import com.example.savedog.global.storage.LocalImageStorage;
 import com.example.savedog.global.storage.S3ImageStorage;
 import com.example.savedog.global.storage.UnconfiguredImageStorage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.nio.file.Path;
+import java.time.Clock;
 
 @Slf4j
 @Configuration
@@ -19,8 +23,16 @@ public class StorageConfig {
             @Value("${savedog.s3.region:" + DEFAULT_REGION + "}") String region,
             @Value("${savedog.s3.access-key:}") String accessKey,
             @Value("${savedog.s3.secret-key:}") String secretKey,
-            @Value("${savedog.s3.session-token:}") String sessionToken
+            @Value("${savedog.s3.session-token:}") String sessionToken,
+            @Value("${savedog.storage.local-dir:}") String localDir,
+            @Value("${savedog.public-base-url:}") String publicBaseUrl,
+            Clock clock
     ) {
+        // 저장 폴더를 지정하면 S3 설정이 있어도 서버 디스크에 보관한다.
+        if (!localDir.isBlank()) {
+            log.info("이미지를 서버 디스크에 보관합니다: {}", localDir.trim());
+            return new LocalImageStorage(Path.of(localDir.trim()), publicBaseUrl, clock);
+        }
         if (bucket.isBlank()) {
             log.warn("S3 버킷이 설정되지 않아 이미지 기능(카메라 프레임, 신고 사진)은 꺼진 상태로 시작합니다.");
             return new UnconfiguredImageStorage();
