@@ -13,6 +13,7 @@ import com.example.savedog.Telemetry.repository.TelemetryRepository;
 import com.example.savedog.global.validation.RequestValidator;
 import com.example.savedog.global.websocket.WebSocketService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -20,8 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -44,6 +48,9 @@ public class TelemetryService {
     private final HazardReportTrigger hazardReportTrigger;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    // 아두이노 값을 마지막으로 받은 뒤 이 시간 동안은 중계 프로그램(로보독 센서)의 거리값을 쓰지 않는다. 0이면 끈다.
+    private final Duration arduinoPriority;
+    private final AtomicReference<LocalDateTime> lastArduinoAt = new AtomicReference<>();
 
     public TelemetryService(
             TelemetryRepository telemetryRepository,
@@ -53,7 +60,8 @@ public class TelemetryService {
             DangerResponder dangerResponder,
             HazardReportTrigger hazardReportTrigger,
             PlatformTransactionManager transactionManager,
-            Clock clock
+            Clock clock,
+            @Value("${savedog.telemetry.arduino-priority:3s}") Duration arduinoPriority
     ) {
         this.telemetryRepository = telemetryRepository;
         this.locationService = locationService;
@@ -63,17 +71,35 @@ public class TelemetryService {
         this.hazardReportTrigger = hazardReportTrigger;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.clock = clock;
+        this.arduinoPriority = arduinoPriority;
     }
 
-    public TelemetryResponse receive(TelemetryRequest request) {
+    /**
+     * 중계 프로그램이 보낸 로보독 센서 값(POST /api/robot/telemetry).
+     * 아두이노와 로보독이 둘 다 전방 거리를 보내므로, 아두이노가 최근에 보냈으면 이 값은 저장하지 않고 비어 있는 값을 돌려준다.
+     * (두 센서 값이 섞이면 위험·안전이 번갈아 나와 경고가 깜빡이고, 위험이 이어져야 만드는 신고가 만들어지지 않는다)
+     * 아두이노가 끊기면 다시 이 값을 쓴다.
+     */
+    public Optional<TelemetryResponse> receive(TelemetryRequest request) {
         RequestValidator.required(request, "요청 본문");
-        return record(validate(RequestValidator.required(request.sensor(), "sensor"), "sensor."));
+        if (arduinoIsActive()) {
+            return Optional.empty();
+        }
+        return Optional.of(record(validate(RequestValidator.required(request.sensor(), "sensor"), "sensor.")));
     }
 
     // 아두이노 전용 주소(POST /api/arduino/sensors)로 받은 값. 항목이 sensor로 감싸여 있지 않다.
     public TelemetryResponse receiveArduino(SensorValues values) {
         RequestValidator.required(values, "요청 본문");
-        return record(validate(values, ""));
+        SensorValues sensor = validate(values, "");
+        lastArduinoAt.set(LocalDateTime.now(clock));
+        return record(sensor);
+    }
+
+    private boolean arduinoIsActive() {
+        LocalDateTime last = lastArduinoAt.get();
+        return arduinoPriority.isPositive() && last != null
+                && Duration.between(last, LocalDateTime.now(clock)).compareTo(arduinoPriority) <= 0;
     }
 
     private TelemetryResponse record(SensorValues sensor) {

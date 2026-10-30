@@ -22,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         properties = {
                 "spring.datasource.url=jdbc:h2:mem:telemetry-sensors;MODE=MySQL;DB_CLOSE_DELAY=-1",
                 "savedog.security.device-token=" + TelemetrySensorsTest.DEVICE_TOKEN,
-                "savedog.security.operator-token=operator-token-for-sensor-test"
+                "savedog.security.operator-token=operator-token-for-sensor-test",
+                // 이 테스트는 두 주소를 섞어 부르므로 아두이노 우선을 끈다. (우선 처리는 ArduinoPriorityTest)
+                "savedog.telemetry.arduino-priority=0s"
         }
 )
 @ActiveProfiles("test")

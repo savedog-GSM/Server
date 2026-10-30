@@ -34,12 +34,13 @@ class PlaceRouteEndpointTest {
     private final HttpClient http = HttpClient.newHttpClient();
 
     @Test
-    @DisplayName("관제 토큰이 필요하고, 잘못된 mode·type은 400, 카카오 키가 없으면 503")
+    @DisplayName("토큰 없이 부를 수 있고, 잘못된 mode·type은 400, 카카오 키가 없으면 503")
     void endpointContract() throws Exception {
         String path = "/api/places/nearest/route?type=toilet&latitude=35.143&longitude=126.8";
 
-        assertEquals(401, get(path, null).statusCode());
-        assertEquals(401, get(path, "Bearer device-token-for-place-route").statusCode());
+        // 토큰이 없거나 틀려도 인증에서 막히지 않는다. (테스트에는 카카오 키가 없어서 503)
+        assertEquals(503, get(path, null).statusCode());
+        assertEquals(503, get(path, "Bearer wrong-token-wrong-token").statusCode());
 
         HttpResponse<String> badMode = get(path + "&mode=FASTEST", "Bearer " + OPERATOR_TOKEN);
         assertEquals(400, badMode.statusCode(), badMode.body());

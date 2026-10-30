@@ -1,14 +1,14 @@
 // 지켜멍 센서 (ESP32 + 초음파 센서 HC-SR04 + 온습도 센서 DHT11/DHT22)
 // 1초마다 전방 거리와 최근 온습도를 서버의 아두이노 전용 API(POST /api/arduino/sensors)로 보낸다.
+// 측정은 정확히 1초마다 하고, 전송은 다른 코어의 작업이 맡는다. 전송이 1초보다 오래 걸리면(재연결 등)
+// 밀린 값은 버리고 가장 최근 값을 보낸다. 그래서 측정이 밀리지 않고, 서버에는 늘 최신 값이 간다.
 //
 // 배선
 //   HC-SR04 VCC  → ESP32 5V(VIN)       DHT VCC  → ESP32 3.3V
 //   HC-SR04 GND  → ESP32 GND           DHT GND  → ESP32 GND
-//   HC-SR04 TRIG → P23                 DHT DATA → P34
+//   HC-SR04 TRIG → P23                 DHT DATA → P33
 //   HC-SR04 ECHO → P22
-//   ※ P34(GPIO 34)는 ESP32에서 "입력 전용" 핀이다. DHT 센서는 보드가 신호선을 잠깐 LOW로 끌어내려야
-//     측정을 시작하는데 P34는 출력을 못 해서 온습도를 읽지 못한다. P4·P25·P26·P27·P32·P33 중 하나로 옮기고
-//     아래 DHT_PIN을 그 번호로 바꾼다. (온습도를 못 읽어도 거리는 계속 보낸다)
+//   ※ DHT는 P34~P39에 꽂으면 안 된다. 입력 전용 핀이라 측정 시작 신호를 못 보내서 온습도를 읽지 못한다.
 //   ※ ECHO는 5V 신호라 그대로 꽂으면 ESP32 핀이 망가질 수 있다.
 //     저항 두 개(예: 1kΩ, 2kΩ)로 나눠 3.3V로 낮춰서 연결하거나, 3.3V용 HC-SR04P를 쓴다.
 //   ※ DHT 센서만 있는 부품(다리 4개)이면 DATA와 VCC 사이에 10kΩ 저항을 단다. 모듈형(다리 3개)은 이미 달려 있다.
@@ -23,15 +23,15 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <DHT.h>
-#include "secrets.h"  // WIFI_SSID, WIFI_PASSWORD, DEVICE_TOKEN
+#include "secrets.h"  
 
-// ───────── 설정 ─────────
-// 학교 서버(HTTPS). 인증서 문제로 안 되면 "http://service.gsmsv.site:22107/api/arduino/sensors"를 쓴다.
+
 const char* SERVER_URL = "https://savedog.https.gsmsv.site/api/arduino/sensors";
+
 
 const int TRIG_PIN = 23;
 const int ECHO_PIN = 22;
-const int DHT_PIN = 34;  // 입력 전용 핀이라 온습도를 못 읽는다. 위 배선 설명을 보고 옮긴다.
+const int DHT_PIN = 33;
 #define DHT_TYPE DHT11  // 파란색 센서는 DHT11, 흰색 센서는 DHT22로 바꾼다.
 const unsigned long SEND_INTERVAL_MS = 1000;  // 거리를 보내는 간격
 // ────────────────────────
@@ -50,14 +50,28 @@ const unsigned long CLIMATE_STALE_MS = 10000;
 const float MIN_TEMPERATURE = -40.0;
 const float MAX_TEMPERATURE = 85.0;
 
-// HTTPS 연결을 매번 새로 맺으면 1초 안에 못 보낼 수 있어서 연결을 계속 쓴다.
+// HTTPS 연결을 매번 새로 맺으면 1초 안에 못 보낼 수 있어서 연결을 계속 쓴다. (전송 작업에서만 쓴다)
 WiFiClientSecure secureClient;
 WiFiClient plainClient;
 HTTPClient http;
 DHT dht(DHT_PIN, DHT_TYPE);
 bool useHttps = false;
 
-unsigned long lastSentAt = 0;
+// 측정 → 전송 작업으로 넘기는 값. 줄은 한 칸이라 새 값이 오면 아직 못 보낸 이전 값을 덮어쓴다.
+struct Reading {
+  float distance;
+  bool withClimate;
+  float temperature;
+  float humidity;
+};
+QueueHandle_t readings;
+volatile unsigned long skippedReadings = 0;  // 전송이 밀려 덮어쓴(못 보낸) 값의 수
+
+// Arduino IDE가 함수 선언을 자동으로 위에 끼워 넣으면 Reading보다 앞에 놓여 오류가 날 수 있어 직접 적는다.
+void sendTask(void*);
+void sendReadings(const Reading& reading);
+
+unsigned long nextMeasureAt = 0;
 unsigned long lastReconnectAt = 0;
 unsigned long lastClimateReadAt = 0;
 unsigned long lastClimateOkAt = 0;
@@ -86,6 +100,11 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.println("Wi-Fi에 연결하는 중...");
+
+  readings = xQueueCreate(1, sizeof(Reading));
+  // 전송은 0번 코어에서 따로 돈다. (loop()는 1번 코어)
+  xTaskCreatePinnedToCore(sendTask, "send", 8192, nullptr, 1, nullptr, 0);
+  nextMeasureAt = millis();
 }
 
 void loop() {
@@ -94,14 +113,18 @@ void loop() {
     lastClimateReadAt = now;
     readClimate(now);
   }
-  if (now - lastSentAt >= SEND_INTERVAL_MS) {
-    lastSentAt = now;
-    tick(now);
+  // 정해진 시각에 맞춰 잰다. 측정이 조금 늦어도 다음 측정 시각은 밀리지 않는다.
+  if ((long) (now - nextMeasureAt) >= 0) {
+    nextMeasureAt += SEND_INTERVAL_MS;
+    if ((long) (now - nextMeasureAt) >= 0) {
+      nextMeasureAt = now + SEND_INTERVAL_MS;  // 크게 밀렸으면(Wi-Fi 재연결 등) 따라잡지 않고 지금부터 다시 센다.
+    }
+    measure(now);
   }
   delay(5);
 }
 
-void tick(unsigned long now) {
+void measure(unsigned long now) {
   if (WiFi.status() != WL_CONNECTED) {
     // 연결을 시도하는 도중에 다시 부르면 처음부터 다시 하게 되므로 몇 초에 한 번만 다시 붙는다.
     if (now - lastReconnectAt >= RECONNECT_INTERVAL_MS) {
@@ -111,8 +134,40 @@ void tick(unsigned long now) {
     }
     return;
   }
-  bool climateFresh = hasClimate && now - lastClimateOkAt <= CLIMATE_STALE_MS;
-  sendReadings(measureDistance(), climateFresh);
+  Reading reading;
+  reading.distance = measureDistance();
+  reading.withClimate = hasClimate && now - lastClimateOkAt <= CLIMATE_STALE_MS;
+  reading.temperature = temperature;
+  reading.humidity = humidity;
+  // 아직 못 보낸 값이 줄에 남아 있으면 그 값은 버리고 새 값으로 바꾼다.
+  if (uxQueueMessagesWaiting(readings) > 0) {
+    skippedReadings++;
+  }
+  xQueueOverwrite(readings, &reading);
+}
+
+// 줄에 들어온 값을 받는 대로 보낸다.
+void sendTask(void*) {
+  Reading reading;
+  unsigned long lastSkipReportAt = 0;
+  for (;;) {
+    if (xQueueReceive(readings, &reading, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+    unsigned long started = millis();
+    sendReadings(reading);
+    unsigned long elapsed = millis() - started;
+    if (elapsed > SEND_INTERVAL_MS) {
+      Serial.printf("전송에 %lums 걸렸습니다. 1초보다 오래 걸려 그동안 잰 값은 건너뜁니다.\n", elapsed);
+    }
+    // 건너뛴 값이 있으면 10초에 한 번만 알린다.
+    if (skippedReadings > 0 && millis() - lastSkipReportAt >= 10000) {
+      lastSkipReportAt = millis();
+      Serial.printf("최근 전송이 느려 %lu개 값을 건너뛰었습니다. 계속되면 HTTP 주소(service.gsmsv.site:22107)를 써 보세요.\n",
+                    (unsigned long) skippedReadings);
+      skippedReadings = 0;
+    }
+  }
 }
 
 // 온습도를 읽어 둔다. 실패하면(배선 불량, 너무 자주 읽음 등) 이전 값을 그대로 둔다.
@@ -169,7 +224,11 @@ float measureDistance() {
   return values[SAMPLES / 2];
 }
 
-void sendReadings(float distance, bool withClimate) {
+void sendReadings(const Reading& reading) {
+  float distance = reading.distance;
+  bool withClimate = reading.withClimate;
+  float temperature = reading.temperature;
+  float humidity = reading.humidity;
   bool started = useHttps ? http.begin(secureClient, SERVER_URL) : http.begin(plainClient, SERVER_URL);
   if (!started) {
     Serial.println("서버 주소(SERVER_URL)를 확인하세요.");

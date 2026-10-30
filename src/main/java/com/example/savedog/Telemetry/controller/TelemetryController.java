@@ -33,10 +33,13 @@ public class TelemetryController {
     private final LocationService locationService;
     private final CameraFrameService cameraFrameService;
 
+    // 저장했으면 201과 저장한 값, 아두이노 값을 쓰는 중이라 저장하지 않았으면 202(본문 없음)
     @DeviceEndpoint
     @PostMapping("/telemetry")
     public ResponseEntity<TelemetryResponse> receive(@RequestBody TelemetryRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(telemetryService.receive(request));
+        return telemetryService.receive(request)
+                .map(saved -> ResponseEntity.status(HttpStatus.CREATED).body(saved))
+                .orElseGet(() -> ResponseEntity.accepted().build());
     }
 
     @GetMapping("/telemetry")
