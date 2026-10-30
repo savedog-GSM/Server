@@ -58,7 +58,8 @@ public class TelemetryController {
         locationService.store(request);
     }
 
-    @DeviceEndpoint
+    // 스마트폰 카메라 화면에서 토큰 없이 보낼 수 있게 열어 둔다. (크기·JPEG 형식 검사는 그대로 한다)
+    @PublicEndpoint
     @PostMapping(value = "/frames", consumes = MediaType.IMAGE_JPEG_VALUE)
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void receiveFrame(@RequestBody(required = false) byte[] jpeg) {
