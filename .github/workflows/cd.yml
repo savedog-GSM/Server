@@ -23,7 +23,7 @@ jobs:
             cache-cleanup: always
 
       - name: Deploy backend
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.2.5
         with:
           username: ${{ secrets.SERVER_USER }}
           host: ${{ secrets.SERVER_HOST }}
