@@ -6,88 +6,61 @@ import com.example.savedog.Safety.domain.SafetyRecord;
 import com.example.savedog.global.common.GeoPoint;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
-import java.util.Set;
 
 /**
- * 위험도 기록을 격자 칸으로 묶어 그래프를 만들고 A*로 경로를 찾는다. (기능명세서 F-09, F-10)
- * 칸 = 지점(노드), 로보독이 연달아 지나간 칸 사이 = 길(간선).
+ * 출발지·도착지를 감싸는 지역을 10m 칸으로 나누고 A*로 경로를 찾는다. (기능명세서 F-09, F-10)
+ * - 로보독이 지나간 칸: 쌓인 위험도 기록의 점수(1~5)를 쓴다.
+ * - 아직 아무도 안 지나간 칸: 위험도를 모르므로 3점(주의)으로 본다.
+ * 그래서 기록이 하나도 없어도 경로가 나오고, 기록이 쌓일수록 안전하다고 확인된 길(1~2점)을 더 고른다.
+ * 칸 사이는 상하좌우·대각선으로 이어진다. 지도(건물·도로) 정보는 쓰지 않으므로 기록 없는 구간은 직선에 가깝다.
  */
 @Component
 public class AStarPathPlanner implements PathPlanner {
     // 스마트폰 GPS 오차(5~10m)보다 잘게 나누면 같은 길이 여러 칸으로 흩어진다.
     private static final double CELL_SIZE_METERS = 10;
     private static final double METERS_PER_LATITUDE_DEGREE = 111_320;
-    // 출발지·도착지를 붙일 칸이 이 거리 안에 없으면 경로 없음
-    private static final double MAX_SNAP_DISTANCE_METERS = 30;
-    // 연달아 찍힌 두 기록의 간격이 이보다 길면 이어서 지나간 것으로 보지 않는다.
-    private static final Duration MAX_LINK_GAP = Duration.ofSeconds(10);
-    // 같은 칸의 기록이 이보다 길게 비면 다른 회차(다시 지나감)로 본다.
-    private static final Duration PASS_GAP = Duration.ofSeconds(60);
+    // 기록이 없는 칸의 위험도
+    static final double UNKNOWN_RISK_SCORE = 3;
     private static final double MIN_RISK_SCORE = 1;
+    // 출발지·도착지를 감싼 사각형 바깥으로 돌아갈 수 있는 여유. 직선거리에 비례하되 이 범위 안에서 정한다.
+    private static final double MIN_MARGIN_METERS = 100;
+    private static final double MAX_MARGIN_METERS = 500;
+    private static final double MARGIN_RATIO = 0.3;
+    // 칸이 이보다 많아지는 먼 거리는 찾지 않는다. (약 10km × 10km)
+    private static final int MAX_CELLS = 1_000_000;
+    private static final int[][] STEPS = {
+            {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}
+    };
 
     @Override
     public Optional<PlannedPath> plan(GeoPoint start, GeoPoint end, PathMode mode, List<SafetyRecord> safetyRecords) {
-        Collection<Cell> cells = buildGraph(safetyRecords);
-        Optional<Cell> startCell = nearestCell(cells, start, mode);
-        Optional<Cell> endCell = nearestCell(cells, end, mode);
-        if (startCell.isEmpty() || endCell.isEmpty()) {
+        Grid grid = Grid.around(start, end);
+        if (grid == null) {
             return Optional.empty();
         }
-        return search(startCell.get(), endCell.get(), mode).map(this::toPlannedPath);
+        grid.applyRecords(safetyRecords);
+        int startCell = grid.cellOf(start);
+        int endCell = grid.cellOf(end);
+        return search(grid, startCell, endCell, mode).map(cells -> toPlannedPath(grid, cells, start, end));
     }
 
-    private Collection<Cell> buildGraph(List<SafetyRecord> records) {
-        Map<CellKey, Cell> cells = new HashMap<>();
-        List<SafetyRecord> track = records.stream()
-                .sorted(Comparator.comparing(SafetyRecord::getAssessedAt))
-                .toList();
-
-        SafetyRecord previous = null;
-        Cell previousCell = null;
-        for (SafetyRecord record : track) {
-            Cell cell = cells.computeIfAbsent(CellKey.of(record.getLatitude(), record.getLongitude()), key -> new Cell());
-            cell.records.add(record);
-            if (previousCell != null && previousCell != cell && isContinuous(previous, record)) {
-                previousCell.neighbors.add(cell);
-                cell.neighbors.add(previousCell);
-            }
-            previous = record;
-            previousCell = cell;
-        }
-
-        cells.values().forEach(Cell::summarize);
-        return cells.values();
-    }
-
-    private boolean isContinuous(SafetyRecord previous, SafetyRecord current) {
-        return Duration.between(previous.getAssessedAt(), current.getAssessedAt()).compareTo(MAX_LINK_GAP) <= 0;
-    }
-
-    private Optional<Cell> nearestCell(Collection<Cell> cells, GeoPoint point, PathMode mode) {
-        return cells.stream()
-                .filter(cell -> isPassable(cell, mode))
-                .filter(cell -> cell.center.distanceTo(point) <= MAX_SNAP_DISTANCE_METERS)
-                .min(Comparator.comparingDouble(cell -> cell.center.distanceTo(point)));
-    }
-
-    private Optional<List<Cell>> search(Cell start, Cell goal, PathMode mode) {
-        Map<Cell, Double> bestCost = new HashMap<>();
-        Map<Cell, Cell> cameFrom = new HashMap<>();
+    private Optional<List<Integer>> search(Grid grid, int start, int goal, PathMode mode) {
+        double[] bestCost = new double[grid.size()];
+        int[] cameFrom = new int[grid.size()];
+        Arrays.fill(bestCost, Double.POSITIVE_INFINITY);
+        Arrays.fill(cameFrom, -1);
         PriorityQueue<Candidate> open = new PriorityQueue<>(Comparator.comparingDouble(Candidate::estimatedTotal));
-        bestCost.put(start, 0.0);
-        open.add(new Candidate(start, 0, start.center.distanceTo(goal.center)));
+        bestCost[start] = 0;
+        open.add(new Candidate(start, 0, grid.distance(start, goal)));
 
         while (!open.isEmpty()) {
             Candidate current = open.poll();
@@ -95,131 +68,197 @@ public class AStarPathPlanner implements PathPlanner {
                 return Optional.of(tracePath(cameFrom, goal));
             }
             // 더 싼 경로가 이미 발견된 칸의 옛 후보는 건너뛴다.
-            if (current.cost > bestCost.get(current.cell)) {
+            if (current.cost > bestCost[current.cell]) {
                 continue;
             }
-            for (Cell next : current.cell.neighbors) {
-                if (!isPassable(next, mode)) {
+            int row = grid.rowOf(current.cell);
+            int column = grid.columnOf(current.cell);
+            for (int[] step : STEPS) {
+                int next = grid.cellAt(row + step[0], column + step[1]);
+                // 출발 칸과 도착 칸은 위험 등급이어도 이미 있거나 가야 하는 곳이므로 막지 않는다.
+                if (next < 0 || (next != goal && !isPassable(grid, next, mode))) {
                     continue;
                 }
-                double cost = current.cost + edgeCost(current.cell, next, mode);
-                if (cost < bestCost.getOrDefault(next, Double.POSITIVE_INFINITY)) {
-                    bestCost.put(next, cost);
-                    cameFrom.put(next, current.cell);
+                double cost = current.cost + edgeCost(grid, current.cell, next, mode);
+                if (cost < bestCost[next]) {
+                    bestCost[next] = cost;
+                    cameFrom[next] = current.cell;
                     // 남은 거리를 직선거리로 어림한다. 실제 비용은 항상 이보다 크거나 같아서 최적 경로가 보장된다.
-                    open.add(new Candidate(next, cost, cost + next.center.distanceTo(goal.center)));
+                    open.add(new Candidate(next, cost, cost + grid.distance(next, goal)));
                 }
             }
         }
         return Optional.empty();
     }
 
-    private boolean isPassable(Cell cell, PathMode mode) {
-        return mode == PathMode.SHORTEST || cell.level != SafetyLevel.DANGER;
+    private boolean isPassable(Grid grid, int cell, PathMode mode) {
+        return mode == PathMode.SHORTEST || SafetyLevel.fromRiskScore(grid.risk[cell]) != SafetyLevel.DANGER;
     }
 
-    private double edgeCost(Cell from, Cell to, PathMode mode) {
-        double length = from.center.distanceTo(to.center);
+    private double edgeCost(Grid grid, int from, int to, PathMode mode) {
+        double length = grid.distance(from, to);
         if (mode == PathMode.SHORTEST) {
             return length;
         }
-        // 위험도 점수(1~5)를 그대로 곱한다. 1점인 길은 길이 그대로, 5점인 길은 5배.
-        double risk = (from.riskScore + to.riskScore) / 2;
+        // 위험도 점수(1~5)를 그대로 곱한다. 1점인 길은 길이 그대로, 모르는 길(3점)은 3배, 5점인 길은 5배.
+        double risk = (grid.risk[from] + grid.risk[to]) / 2;
         return length * Math.max(MIN_RISK_SCORE, risk);
     }
 
-    private List<Cell> tracePath(Map<Cell, Cell> cameFrom, Cell goal) {
-        List<Cell> path = new ArrayList<>();
-        for (Cell cell = goal; cell != null; cell = cameFrom.get(cell)) {
+    private List<Integer> tracePath(int[] cameFrom, int goal) {
+        List<Integer> path = new ArrayList<>();
+        for (int cell = goal; cell >= 0; cell = cameFrom[cell]) {
             path.add(cell);
         }
         Collections.reverse(path);
         return path;
     }
 
-    private PlannedPath toPlannedPath(List<Cell> path) {
-        double distance = 0;
-        for (int i = 1; i < path.size(); i++) {
-            distance += path.get(i - 1).center.distanceTo(path.get(i).center);
+    private PlannedPath toPlannedPath(Grid grid, List<Integer> cells, GeoPoint start, GeoPoint end) {
+        double uncollected = 0;
+        for (int i = 1; i < cells.size(); i++) {
+            int from = cells.get(i - 1);
+            int to = cells.get(i);
+            int unknownEnds = (grid.known[from] ? 0 : 1) + (grid.known[to] ? 0 : 1);
+            uncollected += grid.distance(from, to) * unknownEnds / 2;
         }
-        double averageRisk = path.stream().mapToDouble(cell -> cell.riskScore).average().orElse(0);
-        SafetyLevel maxLevel = path.stream()
-                .map(cell -> cell.level)
-                .max(Comparator.naturalOrder())
-                .orElse(SafetyLevel.SAFE);
+        double averageRisk = cells.stream().mapToDouble(cell -> grid.risk[cell]).average().orElse(UNKNOWN_RISK_SCORE);
+        double maxRisk = cells.stream().mapToDouble(cell -> grid.risk[cell]).max().orElse(UNKNOWN_RISK_SCORE);
+
+        List<GeoPoint> points = simplify(grid, cells, start, end);
+        double distance = 0;
+        for (int i = 1; i < points.size(); i++) {
+            distance += points.get(i - 1).distanceTo(points.get(i));
+        }
         return new PlannedPath(
-                path.stream().map(cell -> cell.center).toList(),
+                points,
                 roundToTenth(distance),
                 roundToTenth(averageRisk),
-                maxLevel
+                SafetyLevel.fromRiskScore(maxRisk),
+                roundToTenth(uncollected),
+                false
         );
+    }
+
+    // 같은 방향으로 이어진 칸은 꺾이는 곳만 남긴다. 처음과 끝은 칸 가운데 대신 실제 출발지·도착지를 쓴다.
+    private List<GeoPoint> simplify(Grid grid, List<Integer> cells, GeoPoint start, GeoPoint end) {
+        List<GeoPoint> points = new ArrayList<>();
+        points.add(start);
+        for (int i = 1; i < cells.size() - 1; i++) {
+            int previous = cells.get(i - 1);
+            int current = cells.get(i);
+            int next = cells.get(i + 1);
+            boolean straight = grid.rowOf(current) - grid.rowOf(previous) == grid.rowOf(next) - grid.rowOf(current)
+                    && grid.columnOf(current) - grid.columnOf(previous) == grid.columnOf(next) - grid.columnOf(current);
+            if (!straight) {
+                points.add(grid.centerOf(current));
+            }
+        }
+        points.add(end);
+        return points;
     }
 
     private static double roundToTenth(double value) {
         return Math.round(value * 10) / 10.0;
     }
 
-    private record Candidate(Cell cell, double cost, double estimatedTotal) {
+    private record Candidate(int cell, double cost, double estimatedTotal) {
     }
 
-    private record CellKey(long row, long column) {
-        static CellKey of(double latitude, double longitude) {
-            double latitudeStep = CELL_SIZE_METERS / METERS_PER_LATITUDE_DEGREE;
-            long row = (long) Math.floor(latitude / latitudeStep);
-            // 경도 1도의 길이는 위도에 따라 줄어들므로 칸이 속한 줄의 위도로 보정한다.
-            double rowLatitude = (row + 0.5) * latitudeStep;
-            double longitudeStep = latitudeStep / Math.cos(Math.toRadians(rowLatitude));
-            long column = (long) Math.floor(longitude / longitudeStep);
-            return new CellKey(row, column);
+    /**
+     * 출발지 주변을 평면으로 펴서 동쪽(x)·북쪽(y) m로 나타낸 칸 묶음. 몇 km 안에서는 오차가 무시할 만하다.
+     * 칸 번호 = 줄 × 열 수 + 열
+     */
+    private static final class Grid {
+        private final double originLatitude;
+        private final double originLongitude;
+        private final double metersPerLongitudeDegree;
+        private final int rows;
+        private final int columns;
+        private final double[] risk;
+        private final boolean[] known;
+
+        private Grid(double originLatitude, double originLongitude, double metersPerLongitudeDegree, int rows, int columns) {
+            this.originLatitude = originLatitude;
+            this.originLongitude = originLongitude;
+            this.metersPerLongitudeDegree = metersPerLongitudeDegree;
+            this.rows = rows;
+            this.columns = columns;
+            this.risk = new double[rows * columns];
+            this.known = new boolean[rows * columns];
+            Arrays.fill(risk, UNKNOWN_RISK_SCORE);
         }
-    }
 
-    private static final class Cell {
-        private final List<SafetyRecord> records = new ArrayList<>();
-        private final Set<Cell> neighbors = new LinkedHashSet<>();
-        private GeoPoint center;
-        private double riskScore;
-        private SafetyLevel level;
+        // 너무 넓으면 null
+        static Grid around(GeoPoint start, GeoPoint end) {
+            double margin = Math.clamp(start.distanceTo(end) * MARGIN_RATIO, MIN_MARGIN_METERS, MAX_MARGIN_METERS);
+            double metersPerLongitudeDegree = METERS_PER_LATITUDE_DEGREE
+                    * Math.cos(Math.toRadians((start.latitude() + end.latitude()) / 2));
+            double south = Math.min(start.latitude(), end.latitude()) - margin / METERS_PER_LATITUDE_DEGREE;
+            double north = Math.max(start.latitude(), end.latitude()) + margin / METERS_PER_LATITUDE_DEGREE;
+            double west = Math.min(start.longitude(), end.longitude()) - margin / metersPerLongitudeDegree;
+            double east = Math.max(start.longitude(), end.longitude()) + margin / metersPerLongitudeDegree;
+            long rows = (long) Math.ceil((north - south) * METERS_PER_LATITUDE_DEGREE / CELL_SIZE_METERS);
+            long columns = (long) Math.ceil((east - west) * metersPerLongitudeDegree / CELL_SIZE_METERS);
+            if (rows * columns > MAX_CELLS) {
+                return null;
+            }
+            return new Grid(south, west, metersPerLongitudeDegree, (int) rows, (int) columns);
+        }
 
-        // 기록을 다 모은 뒤 대표 위치(기록들의 평균 좌표)와 위험도를 정한다.
-        private void summarize() {
-            center = new GeoPoint(
-                    records.stream().mapToDouble(SafetyRecord::getLatitude).average().orElseThrow(),
-                    records.stream().mapToDouble(SafetyRecord::getLongitude).average().orElseThrow()
+        int size() {
+            return rows * columns;
+        }
+
+        int cellOf(GeoPoint point) {
+            int row = (int) Math.floor((point.latitude() - originLatitude) * METERS_PER_LATITUDE_DEGREE / CELL_SIZE_METERS);
+            int column = (int) Math.floor((point.longitude() - originLongitude) * metersPerLongitudeDegree / CELL_SIZE_METERS);
+            return cellAt(row, column);
+        }
+
+        // 범위 밖이면 -1
+        int cellAt(int row, int column) {
+            if (row < 0 || row >= rows || column < 0 || column >= columns) {
+                return -1;
+            }
+            return row * columns + column;
+        }
+
+        int rowOf(int cell) {
+            return cell / columns;
+        }
+
+        int columnOf(int cell) {
+            return cell % columns;
+        }
+
+        GeoPoint centerOf(int cell) {
+            return new GeoPoint(
+                    originLatitude + (rowOf(cell) + 0.5) * CELL_SIZE_METERS / METERS_PER_LATITUDE_DEGREE,
+                    originLongitude + (columnOf(cell) + 0.5) * CELL_SIZE_METERS / metersPerLongitudeDegree
             );
-            riskScore = recencyWeightedRisk();
-            level = SafetyLevel.fromRiskScore(riskScore);
         }
 
-        // 지나간 회차별 평균을 구하고, 최근 회차일수록 2배씩 무겁게 쳐서 평균한다.
-        private double recencyWeightedRisk() {
-            List<Double> passAverages = new ArrayList<>();
-            double sum = 0;
-            int count = 0;
-            LocalDateTime previousAt = null;
-            for (SafetyRecord record : records) {
-                boolean newPass = previousAt != null
-                        && Duration.between(previousAt, record.getAssessedAt()).compareTo(PASS_GAP) > 0;
-                if (newPass) {
-                    passAverages.add(sum / count);
-                    sum = 0;
-                    count = 0;
-                }
-                sum += record.getRiskScore();
-                count++;
-                previousAt = record.getAssessedAt();
-            }
-            passAverages.add(sum / count);
+        // 두 칸 가운데 사이의 거리(m)
+        double distance(int from, int to) {
+            double rowDelta = rowOf(from) - rowOf(to);
+            double columnDelta = columnOf(from) - columnOf(to);
+            return Math.hypot(rowDelta, columnDelta) * CELL_SIZE_METERS;
+        }
 
-            double weightedSum = 0;
-            double totalWeight = 0;
-            double weight = 1;
-            for (int i = passAverages.size() - 1; i >= 0; i--) {
-                weightedSum += passAverages.get(i) * weight;
-                totalWeight += weight;
-                weight /= 2;
+        // 지역 안의 기록을 칸별로 모아 그 칸의 위험도로 쓴다. 지역 밖의 기록은 쓰지 않는다.
+        void applyRecords(List<SafetyRecord> records) {
+            Map<Integer, List<SafetyRecord>> byCell = new HashMap<>();
+            for (SafetyRecord record : records) {
+                int cell = cellOf(new GeoPoint(record.getLatitude(), record.getLongitude()));
+                if (cell >= 0) {
+                    byCell.computeIfAbsent(cell, key -> new ArrayList<>()).add(record);
+                }
             }
-            return weightedSum / totalWeight;
+            byCell.forEach((cell, cellRecords) -> {
+                risk[cell] = RecencyRisk.of(cellRecords);
+                known[cell] = true;
+            });
         }
     }
 }
