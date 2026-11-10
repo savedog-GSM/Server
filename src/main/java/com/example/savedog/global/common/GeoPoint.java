@@ -7,9 +7,9 @@ public record GeoPoint(
 ) {
     private static final double EARTH_RADIUS_METERS = 6_371_000; //지구의 반지름
 
-    // 두 좌표 사이의 지표면 거리(m). 하버사인 공식
+    // 두 좌표 사이의 지표면 거리(m). 하버사인 공식을 사용하였다.
     public double distanceTo(GeoPoint other) {
-        double latitudeDelta = Math.toRadians(other.latitude - latitude);
+        double latitudeDelta = Math.toRadians(other.latitude - latitude); // 두 좌표를 뺀다.
         double longitudeDelta = Math.toRadians(other.longitude - longitude);
         double a = Math.pow(Math.sin(latitudeDelta / 2), 2)
                 + Math.cos(Math.toRadians(latitude)) * Math.cos(Math.toRadians(other.latitude))
