@@ -33,10 +33,11 @@ import java.nio.charset.StandardCharsets;
 public class ApiRequestGuardFilter extends OncePerRequestFilter {
     public static final int MAX_FRAME_BYTES = 2 * 1024 * 1024;
     private static final int MAX_JSON_BYTES = 64 * 1024;
-    // 위험 신고는 사진(최대 2MB)에 글자 항목과 multipart 경계가 붙는다.
-    private static final int MAX_HAZARD_UPLOAD_BYTES = MAX_FRAME_BYTES + MAX_JSON_BYTES;
+    // 위험 신고·주인 얼굴 등록은 사진(최대 2MB)에 글자 항목과 multipart 경계가 붙는다.
+    private static final int MAX_PHOTO_UPLOAD_BYTES = MAX_FRAME_BYTES + MAX_JSON_BYTES;
     private static final String FRAME_UPLOAD_PATH = "/api/robot/frames";
     private static final String HAZARD_UPLOAD_PATH = "/api/robot/hazards";
+    private static final String OWNER_FACE_PATH = "/api/owner/faces";
 
     private final ErrorResponseWriter errorResponseWriter;
 
@@ -59,8 +60,8 @@ public class ApiRequestGuardFilter extends OncePerRequestFilter {
         if (FRAME_UPLOAD_PATH.equals(uri)) {
             return MAX_FRAME_BYTES;
         }
-        if (HAZARD_UPLOAD_PATH.equals(uri)) {
-            return MAX_HAZARD_UPLOAD_BYTES;
+        if (HAZARD_UPLOAD_PATH.equals(uri) || OWNER_FACE_PATH.equals(uri)) {
+            return MAX_PHOTO_UPLOAD_BYTES;
         }
         return MAX_JSON_BYTES;
     }

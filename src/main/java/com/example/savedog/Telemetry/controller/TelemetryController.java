@@ -1,5 +1,6 @@
 package com.example.savedog.Telemetry.controller;
 
+import com.example.savedog.Owner.service.OwnerSightingService;
 import com.example.savedog.Telemetry.DTO.LocationRequest;
 import com.example.savedog.Telemetry.DTO.TelemetryRequest;
 import com.example.savedog.Telemetry.DTO.TelemetryResponse;
@@ -33,6 +34,7 @@ public class TelemetryController {
     private final TelemetryService telemetryService;
     private final LocationService locationService;
     private final CameraFrameService cameraFrameService;
+    private final OwnerSightingService ownerSightingService;
 
     // 저장했으면 201과 저장한 값, 아두이노 값을 쓰는 중이라 저장하지 않았으면 202(본문 없음)
     @DeviceEndpoint
@@ -65,6 +67,8 @@ public class TelemetryController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void receiveFrame(@RequestBody(required = false) byte[] jpeg) {
         cameraFrameService.store(jpeg);
+        // 형식·크기 검사를 통과한 사진만 주인 찾기에도 넘긴다.
+        ownerSightingService.submit(jpeg);
     }
 
     // 이미지는 S3에 있으므로 presigned URL로 넘긴다.

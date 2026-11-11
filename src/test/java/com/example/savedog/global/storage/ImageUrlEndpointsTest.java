@@ -28,7 +28,8 @@ class ImageUrlEndpointsTest {
     private final CameraFrameService cameraFrameService = mock(CameraFrameService.class);
     private final ReportService reportService = mock(ReportService.class);
     private final TelemetryController telemetryController = new TelemetryController(
-            mock(TelemetryService.class), mock(LocationService.class), cameraFrameService
+            mock(TelemetryService.class), mock(LocationService.class), cameraFrameService,
+            mock(com.example.savedog.Owner.service.OwnerSightingService.class)
     );
     private final ReportController reportController = new ReportController(reportService);
 
