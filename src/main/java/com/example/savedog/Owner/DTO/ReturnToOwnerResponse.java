@@ -1,6 +1,6 @@
 package com.example.savedog.Owner.DTO;
 
-import com.example.savedog.Owner.service.ReturnStatus;
+import com.example.savedog.Navigation.domain.NavigationStatus;
 import com.example.savedog.Robot.domain.CommandType;
 import com.example.savedog.global.common.GeoPoint;
 
@@ -15,7 +15,7 @@ import java.util.List;
  */
 public record ReturnToOwnerResponse(
         boolean active,
-        ReturnStatus status,
+        NavigationStatus status,
         String message,
         GeoPoint owner,
         Double ownerAccuracy,

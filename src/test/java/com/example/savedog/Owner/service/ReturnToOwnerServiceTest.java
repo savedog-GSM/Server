@@ -1,5 +1,7 @@
 package com.example.savedog.Owner.service;
 
+import com.example.savedog.Navigation.domain.NavigationStatus;
+import com.example.savedog.Navigation.service.RobotNavigationService;
 import com.example.savedog.Pathfinding.DTO.PathSearchResponse;
 import com.example.savedog.Pathfinding.domain.PathMode;
 import com.example.savedog.Pathfinding.service.PathfindingService;
@@ -50,6 +52,7 @@ class ReturnToOwnerServiceTest {
     private final OwnerSightingService sighting = mock(OwnerSightingService.class);
     private final TelemetryRepository telemetry = mock(TelemetryRepository.class);
     private final List<RobotCommandRequest> commands = new ArrayList<>();
+    private RobotNavigationService navigation;
     private ReturnToOwnerService service;
 
     @BeforeEach
@@ -63,7 +66,8 @@ class ReturnToOwnerServiceTest {
         // 경로는 로보독 → 주인 직선 하나
         when(pathfinding.plan(any(), any(), any())).thenAnswer(invocation -> Optional.of(new PathSearchResponse(
                 PathMode.SAFEST, List.of(invocation.getArgument(0), invocation.getArgument(1)), 0, 1, SafetyLevel.SAFE)));
-        service = new ReturnToOwnerService(locations, pathfinding, robot, sighting, telemetry, clock);
+        navigation = new RobotNavigationService(locations, pathfinding, robot, sighting, telemetry, clock);
+        service = new ReturnToOwnerService(navigation);
     }
 
     @Test
@@ -71,7 +75,7 @@ class ReturnToOwnerServiceTest {
     void waitsForRobotLocation() {
         var response = service.start(at(0, 100).latitude(), at(0, 100).longitude(), 5.0);
 
-        assertEquals(ReturnStatus.WAITING_FOR_ROBOT_LOCATION, response.status());
+        assertEquals(NavigationStatus.WAITING_FOR_ROBOT_LOCATION, response.status());
         assertEquals(List.of(CommandType.STOP), types());
     }
 
@@ -81,15 +85,15 @@ class ReturnToOwnerServiceTest {
         robotAt(0, 0);
         // 주인은 동쪽 100m
         var response = service.start(at(0, 100).latitude(), at(0, 100).longitude(), null);
-        assertEquals(ReturnStatus.FINDING_HEADING, response.status());
+        assertEquals(NavigationStatus.FINDING_HEADING, response.status());
         assertEquals(CommandType.FORWARD, last().type());
-        assertEquals(ReturnToOwnerService.FORWARD_MS, last().durationMs());
+        assertEquals(RobotNavigationService.FORWARD_MS, last().durationMs());
 
         // 앞으로 가 보니 북쪽으로 6m 움직였다 → 바라보는 방향 북쪽(0°), 가야 할 방향 동쪽(90°) → 오른쪽으로 90°
         clock.advanceSeconds(2);
         robotAt(6, 0);
-        service.tick();
-        assertEquals(ReturnStatus.TURNING, service.snapshot().status());
+        navigation.tick();
+        assertEquals(NavigationStatus.TURNING, service.snapshot().status());
         assertEquals(CommandType.TURN_RIGHT, last().type());
         assertEquals(90, last().degrees(), 5);
 
@@ -97,14 +101,14 @@ class ReturnToOwnerServiceTest {
         int sent = commands.size();
         clock.advanceSeconds(1);
         robotAt(6, 0);
-        service.tick();
+        navigation.tick();
         assertEquals(sent, commands.size());
 
         // 다 돌았으면 돈 방향(동쪽)을 믿고 앞으로 간다.
         clock.advanceSeconds(2);
         robotAt(6, 0);
-        service.tick();
-        assertEquals(ReturnStatus.NAVIGATING, service.snapshot().status());
+        navigation.tick();
+        assertEquals(NavigationStatus.NAVIGATING, service.snapshot().status());
         assertEquals(CommandType.FORWARD, last().type());
     }
 
@@ -116,11 +120,11 @@ class ReturnToOwnerServiceTest {
         clock.advanceSeconds(2);
         robotAt(6, 0);
 
-        service.tick();
+        navigation.tick();
 
-        assertEquals(ReturnStatus.NAVIGATING, service.snapshot().status());
+        assertEquals(NavigationStatus.NAVIGATING, service.snapshot().status());
         assertEquals(CommandType.FORWARD, last().type());
-        assertEquals(ReturnToOwnerService.SPEED, last().speed());
+        assertEquals(RobotNavigationService.SPEED, last().speed());
     }
 
     @Test
@@ -130,7 +134,7 @@ class ReturnToOwnerServiceTest {
 
         var response = service.start(at(5, 0).latitude(), at(5, 0).longitude(), null);
 
-        assertEquals(ReturnStatus.ARRIVED, response.status());
+        assertEquals(NavigationStatus.ARRIVED, response.status());
         assertFalse(response.active());
         assertEquals(List.of(CommandType.STOP, CommandType.BARK), types());
     }
@@ -146,9 +150,9 @@ class ReturnToOwnerServiceTest {
 
         service.start(at(100, 0).latitude(), at(100, 0).longitude(), null);
         robotAt(0, 0);
-        service.tick();
+        navigation.tick();
 
-        assertEquals(ReturnStatus.BLOCKED_BY_OBSTACLE, service.snapshot().status());
+        assertEquals(NavigationStatus.BLOCKED_BY_OBSTACLE, service.snapshot().status());
         assertEquals(List.of(CommandType.STOP), types());
     }
 
@@ -159,15 +163,15 @@ class ReturnToOwnerServiceTest {
         robotAt(0, 0);
 
         service.start(at(100, 0).latitude(), at(100, 0).longitude(), null);
-        assertEquals(ReturnStatus.NO_SAFE_ROUTE, service.snapshot().status());
+        assertEquals(NavigationStatus.NO_SAFE_ROUTE, service.snapshot().status());
         clock.advanceSeconds(10);
         robotAt(0, 0);
-        service.tick();
+        navigation.tick();
         org.mockito.Mockito.verify(pathfinding, org.mockito.Mockito.times(1)).plan(any(), any(), any());
 
         clock.advanceSeconds(25);
         robotAt(0, 0);
-        service.tick();
+        navigation.tick();
         org.mockito.Mockito.verify(pathfinding, org.mockito.Mockito.times(2)).plan(any(), any(), any());
     }
 
@@ -177,21 +181,21 @@ class ReturnToOwnerServiceTest {
         robotAt(0, 0);
         when(sighting.recentSighting()).thenReturn(Optional.of(face(0.5, 0.1)));
         service.start(at(30, 0).latitude(), at(30, 0).longitude(), null);
-        assertEquals(ReturnStatus.APPROACHING_BY_FACE, service.snapshot().status());
+        assertEquals(NavigationStatus.APPROACHING_BY_FACE, service.snapshot().status());
         assertEquals(CommandType.TURN_RIGHT, last().type());
         assertEquals(15, last().degrees());
 
         clock.advanceSeconds(3);
         robotAt(0, 0);
         when(sighting.recentSighting()).thenReturn(Optional.of(face(0.05, 0.1)));
-        service.tick();
+        navigation.tick();
         assertEquals(CommandType.FORWARD, last().type());
 
         clock.advanceSeconds(1);
         robotAt(0, 0);
         when(sighting.recentSighting()).thenReturn(Optional.of(face(0, 0.3)));
-        service.tick();
-        assertEquals(ReturnStatus.ARRIVED, service.snapshot().status());
+        navigation.tick();
+        assertEquals(NavigationStatus.ARRIVED, service.snapshot().status());
     }
 
     @Test
@@ -200,12 +204,12 @@ class ReturnToOwnerServiceTest {
         when(robot.sendCommand(any())).thenThrow(new BusinessException(ErrorCode.ROBOT_NOT_CONNECTED));
         robotAt(0, 0);
         service.start(at(100, 0).latitude(), at(100, 0).longitude(), null);
-        assertEquals(ReturnStatus.ROBOT_DISCONNECTED, service.snapshot().status());
+        assertEquals(NavigationStatus.ROBOT_DISCONNECTED, service.snapshot().status());
 
         clock.advance(Duration.ofMinutes(16));
         robotAt(0, 0);
-        service.tick();
-        assertEquals(ReturnStatus.GAVE_UP, service.snapshot().status());
+        navigation.tick();
+        assertEquals(NavigationStatus.GAVE_UP, service.snapshot().status());
         assertFalse(service.snapshot().active());
     }
 
@@ -216,7 +220,7 @@ class ReturnToOwnerServiceTest {
         service.start(at(100, 0).latitude(), at(100, 0).longitude(), null);
 
         var stopped = service.stop();
-        assertEquals(ReturnStatus.IDLE, stopped.status());
+        assertEquals(NavigationStatus.IDLE, stopped.status());
         assertEquals(CommandType.STOP, last().type());
 
         assertTrue(service.start(at(100, 0).latitude(), at(100, 0).longitude(), null).active());
@@ -233,12 +237,12 @@ class ReturnToOwnerServiceTest {
     @Test
     @DisplayName("방향 계산: 북쪽 0°, 동쪽 90°, 차이는 -180~180°로")
     void bearingMath() {
-        assertEquals(0, ReturnToOwnerService.bearing(at(0, 0), at(10, 0)), 0.5);
-        assertEquals(90, ReturnToOwnerService.bearing(at(0, 0), at(0, 10)), 0.5);
-        assertEquals(180, ReturnToOwnerService.bearing(at(0, 0), at(-10, 0)), 0.5);
-        assertEquals(-90, ReturnToOwnerService.normalize(270), 1e-9);
-        assertEquals(20, ReturnToOwnerService.normalize(380), 1e-9);
-        assertEquals(-170, ReturnToOwnerService.normalize(190), 1e-9);
+        assertEquals(0, RobotNavigationService.bearing(at(0, 0), at(10, 0)), 0.5);
+        assertEquals(90, RobotNavigationService.bearing(at(0, 0), at(0, 10)), 0.5);
+        assertEquals(180, RobotNavigationService.bearing(at(0, 0), at(-10, 0)), 0.5);
+        assertEquals(-90, RobotNavigationService.normalize(270), 1e-9);
+        assertEquals(20, RobotNavigationService.normalize(380), 1e-9);
+        assertEquals(-170, RobotNavigationService.normalize(190), 1e-9);
     }
 
     private OwnerSighting face(double horizontal, double widthRatio) {
